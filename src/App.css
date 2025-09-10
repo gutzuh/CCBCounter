@@ -1,0 +1,137 @@
+.ccb-actions {
+  display: flex;
+  gap: 1em;
+  justify-content: center;
+  margin-bottom: 1em;
+}
+.ccb-save-btn {
+  background: #2ecc40;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 1.2em;
+  padding: 0.7em 2em;
+  cursor: pointer;
+  box-shadow: 0 2px 8px #0004;
+  transition: background 0.2s;
+}
+.ccb-save-btn:disabled {
+  background: #888;
+  cursor: not-allowed;
+}
+.ccb-success {
+  color: #2ecc40;
+  font-weight: bold;
+  margin-top: 1em;
+}
+.ccb-error {
+  color: #c00;
+  font-weight: bold;
+  margin-top: 1em;
+}
+/* ...existing code... */
+
+.ccb-container {
+  max-width: 600px;
+  margin: 2rem auto;
+  padding: 2rem;
+  background: #1a1a1a;
+  border-radius: 16px;
+  box-shadow: 0 2px 16px #0006;
+  text-align: center;
+}
+
+@media print {
+  body * { visibility: hidden; }
+  .print-area, .print-area * { visibility: visible; }
+  .print-area { position: absolute; left: 0; top: 0; width: 100%; }
+}
+
+.ccb-header {
+  display: flex;
+  /* Minimal CSS left for legacy classes; most UI uses Tailwind utilities now. */
+
+  /* Keep a small reset for inline elements used by older components */
+   /* .remote-notice { } */
+}
+.ccb-icon-btn:hover {
+  background: #535bf2;
+  border-color: #fff;
+}
+.ccb-icon {
+  font-size: 2.5em;
+}
+.ccb-label {
+  font-size: 1.1em;
+  margin-top: 0.2em;
+}
+.ccb-count {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  margin-top: 0.5em;
+}
+.ccb-remove-btn {
+  background: #c00;
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  font-size: 1.5em;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ccb-ata {
+  width: 100%;
+  font-size: 1.1em;
+  background: #222;
+  color: #fff;
+  border-radius: 8px;
+  border: 1px solid #535bf2;
+  margin-bottom: 1em;
+  padding: 1em;
+  resize: none;
+}
+.ccb-print-btn {
+  background: #535bf2;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 1.2em;
+  padding: 0.7em 2em;
+  cursor: pointer;
+  margin-top: 1em;
+  box-shadow: 0 2px 8px #0004;
+  transition: background 0.2s;
+}
+.ccb-print-btn:hover {
+  background: #282c34;
+}
+
+@media (max-width: 600px) {
+  .instrument-grid { grid-template-columns: repeat(2,1fr); }
+  .dec-btn, .inc-btn { width:40px; height:40px }
+}
+
+/* Admin panel responsive: top-right on desktop, bottom sheet on mobile */
+.admin-panel {
+  transition: all 0.18s ease;
+}
+@media (max-width: 640px) {
+  .admin-panel {
+    right: 0 !important;
+    left: 0 !important;
+    top: auto !important;
+    bottom: 0 !important;
+    border-radius: 12px 12px 0 0 !important;
+    width: 100% !important;
+    box-shadow: 0 -8px 24px rgba(0,0,0,0.3);
+    padding: 16px !important;
+  }
+}
+/*
+lol
+*/

@@ -1,0 +1,143 @@
+import express from 'express';
+import cors from 'cors';
+import sqlite3 from 'sqlite3';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
+import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell } from 'docx';
+import { Buffer } from 'buffer';
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+const httpServer = createServer(app);
+const io = new Server(httpServer, { cors: { origin: '*' } });
+
+const db = new sqlite3.Database('./ccb.db');
+
+db.run(`CREATE TABLE IF NOT EXISTS contabilizacao (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  data TEXT,
+  musicians INTEGER,
+  organists INTEGER,
+  instruments TEXT,
+  printed INTEGER DEFAULT 0
+)`);
+
+// Garantir que a instalação antiga (sem coluna `printed`) seja migrada
+db.serialize(() => {
+  db.all("PRAGMA table_info(contabilizacao);", (err, rows) => {
+    if (err) {
+      console.error('Erro ao verificar esquema da tabela contabilizacao', err);
+      return;
+    }
+    const cols = (rows || []).map(r => r.name);
+    if (!cols.includes('printed')) {
+      console.log('Coluna `printed` ausente. Adicionando coluna...');
+      db.run('ALTER TABLE contabilizacao ADD COLUMN printed INTEGER DEFAULT 0', (err2) => {
+        if (err2) console.error('Erro ao adicionar coluna printed', err2);
+        else console.log('Coluna `printed` adicionada com sucesso.');
+      });
+    }
+  });
+});
+
+let lastState = null;
+
+io.on('connection', (socket) => {
+  console.log('Cliente socket conectado:', socket.id);
+
+  // If we have a last known state, send it immediately to the connecting client
+  if (lastState) {
+    socket.emit('contabilizacao', lastState);
+  }
+
+  socket.on('contabilizacao', (payload) => {
+    const timestamp = new Date().toISOString();
+    const instrumentsJson = JSON.stringify(payload.instruments || {});
+    // persist into DB
+    db.run('INSERT INTO contabilizacao (data, musicians, organists, instruments) VALUES (?, ?, ?, ?)', [timestamp, payload.musicians || 0, payload.organists || 0, instrumentsJson], function (err) {
+      if (err) {
+        console.error('DB insert error', err);
+        return;
+      }
+      const newRecord = { id: this.lastID, data: timestamp, musicians: payload.musicians || 0, organists: payload.organists || 0, instruments: JSON.parse(instrumentsJson), printed: 0 };
+      lastState = newRecord;
+      // if admin flag set, broadcast admin event first so clients prioritize
+      if (payload && payload.admin) {
+        const adminRecord = { ...newRecord, admin: true };
+        io.emit('contabilizacao_admin', adminRecord);
+      }
+      io.emit('contabilizacao', newRecord);
+    });
+  });
+
+  socket.on('printed', (payload) => {
+    // payload may include id; otherwise use lastState
+    const id = payload?.id || (lastState && lastState.id);
+    if (!id) return;
+    db.run('UPDATE contabilizacao SET printed = 1 WHERE id = ?', [id], function (err) {
+      if (err) {
+        console.error('DB update printed error', err);
+        return;
+      }
+      io.emit('reset');
+      // optionally clear lastState after printing
+      lastState = null;
+    });
+  });
+
+  socket.on('disconnect', () => {
+    console.log('Cliente socket desconectado:', socket.id);
+  });
+});
+
+app.get('/health', (req, res) => res.json({ ok: true }));
+
+// Return the last known contabilizacao (in-memory). Useful for new clients or HTTP checks.
+app.get('/last', (req, res) => {
+  if (!lastState) return res.json(null);
+  res.json(lastState);
+});
+
+app.get('/api/contabilizacoes', (req, res) => {
+  db.all('SELECT * FROM contabilizacao ORDER BY id DESC', [], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+    const parsed = rows.map(r => ({ ...r, instruments: r.instruments ? JSON.parse(r.instruments) : {} }));
+    res.json(parsed);
+  });
+});
+
+app.get('/api/contabilizacao/:id/docx', (req, res) => {
+  const id = Number(req.params.id);
+  db.get('SELECT * FROM contabilizacao WHERE id = ?', [id], async (err, row) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!row) return res.status(404).json({ error: 'Registro não encontrado' });
+    const instruments = JSON.parse(row.instruments || '{}');
+
+    const doc = new Document();
+    doc.addSection({
+      children: [
+        new Paragraph({ children: [new TextRun({ text: 'Igreja Evangélica Congregacional - CCB', bold: true, size: 24 })], alignment: 'center' }),
+        new Paragraph({ text: 'Ata de Músicos', spacing: { before: 200, after: 200 }, alignment: 'center' }),
+        new Paragraph(`Data: ${new Date(row.data).toLocaleDateString()}`),
+        new Paragraph(`Músicos presentes: ${row.musicians}`),
+        new Paragraph(`Organistas presentes: ${row.organists}`),
+        new Paragraph({ text: '', spacing: { before: 200 } }),
+        new Table({ rows: Object.entries(instruments).map(([name, count]) => new TableRow({ children: [new TableCell({ children: [new Paragraph(name)] }), new TableCell({ children: [new Paragraph(String(count))] })] })) }),
+        new Paragraph({ text: '', spacing: { before: 400 } }),
+        new Paragraph('__________________________________________'),
+        new Paragraph('Assinatura do responsável'),
+      ],
+    });
+
+    const buffer = await Packer.toBuffer(doc);
+    res.setHeader('Content-Disposition', `attachment; filename=ata_${id}.docx`);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.send(Buffer.from(buffer));
+  });
+});
+
+httpServer.listen(3001, () => {
+  console.log('Servidor realtime (socket + DB) rodando na porta 3001');
+});
