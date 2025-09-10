@@ -273,11 +273,51 @@ function App() {
       }
       // insert into Supabase
       (async () => {
+        // fetch last snapshot to compute diffs (helps audit)
+        const { data: last } = await supabase.from('contabilizacao').select('*').order('id', { ascending: false }).limit(1).maybeSingle();
+
+        // compute field-level diffs
+        const changes = [];
+        const lastInstruments = (last && last.instruments) ? (typeof last.instruments === 'string' ? JSON.parse(last.instruments) : last.instruments) : {};
+        if (!last || (last.musicians || 0) !== payload.musicians) {
+          changes.push({ field: 'musicians', old_value: last ? last.musicians || 0 : 0, new_value: payload.musicians });
+        }
+        if (!last || (last.organists || 0) !== payload.organists) {
+          changes.push({ field: 'organists', old_value: last ? last.organists || 0 : 0, new_value: payload.organists });
+        }
+        // instruments per-item diffs
+        const allKeys = Array.from(new Set([...Object.keys(lastInstruments || {}), ...Object.keys(payload.instruments || {})]));
+        allKeys.forEach((k) => {
+          const oldv = Number(lastInstruments[k] || 0);
+          const newv = Number(payload.instruments[k] || 0);
+          if (oldv !== newv) {
+            changes.push({ field: `instrument.${k}`, old_value: oldv, new_value: newv });
+          }
+        });
+
         const { data, error } = await supabase.from('contabilizacao').insert([{ data: new Date().toISOString(), musicians: payload.musicians, organists: payload.organists, instruments: JSON.stringify(payload.instruments), printed: 0 }]);
         if (error) {
           if (!opts.silent) setError('Falha ao enviar dados: ' + error.message);
           return;
         }
+
+        const inserted = Array.isArray(data) ? data[0] : data;
+        // write change log rows referencing the new snapshot id
+        if (changes.length > 0) {
+          const changeRows = changes.map(ch => ({
+            contabilizacao_id: inserted && inserted.id ? inserted.id : null,
+            data: new Date().toISOString(),
+            field: ch.field,
+            old_value: String(ch.old_value),
+            new_value: String(ch.new_value)
+          }));
+          try {
+            await supabase.from('contabilizacao_changes').insert(changeRows);
+          } catch (e) {
+            console.warn('Falha ao registrar mudanças de auditoria', e);
+          }
+        }
+
         lastSentPayloadRef.current = deepClone(payload);
         setSaved(true);
         setLastSentAt(new Date().toISOString());
@@ -313,10 +353,28 @@ function App() {
       const derived = deriveCountsFromSelected(selected);
       const payload = { musicians: derived.musiciansCount, organists: derived.organCount, instruments: selected, admin: true };
       (async () => {
+        // fetch last snapshot
+        const { data: last } = await supabase.from('contabilizacao').select('*').order('id', { ascending: false }).limit(1).maybeSingle();
+        const lastInstruments = (last && last.instruments) ? (typeof last.instruments === 'string' ? JSON.parse(last.instruments) : last.instruments) : {};
+        const changes = [];
+        if (!last || (last.musicians || 0) !== payload.musicians) changes.push({ field: 'musicians', old_value: last ? last.musicians || 0 : 0, new_value: payload.musicians });
+        if (!last || (last.organists || 0) !== payload.organists) changes.push({ field: 'organists', old_value: last ? last.organists || 0 : 0, new_value: payload.organists });
+        const allKeys = Array.from(new Set([...Object.keys(lastInstruments || {}), ...Object.keys(payload.instruments || {})]));
+        allKeys.forEach((k) => {
+          const oldv = Number(lastInstruments[k] || 0);
+          const newv = Number(payload.instruments[k] || 0);
+          if (oldv !== newv) changes.push({ field: `instrument.${k}`, old_value: oldv, new_value: newv });
+        });
+
         const { data, error } = await supabase.from('contabilizacao').insert([{ data: new Date().toISOString(), musicians: payload.musicians, organists: payload.organists, instruments: JSON.stringify(payload.instruments), printed: 0, admin: true }]);
         if (error) {
           console.warn('Erro admin force-send', error);
         } else {
+          const inserted = Array.isArray(data) ? data[0] : data;
+          if (changes.length > 0) {
+            const changeRows = changes.map(ch => ({ contabilizacao_id: inserted && inserted.id ? inserted.id : null, data: new Date().toISOString(), field: ch.field, old_value: String(ch.old_value), new_value: String(ch.new_value) }));
+            try { await supabase.from('contabilizacao_changes').insert(changeRows); } catch (e) { console.warn('Falha ao registrar mudanças de auditoria (admin)', e); }
+          }
           lastSentPayloadRef.current = deepClone(payload);
           setLastSentAt(new Date().toISOString());
         }
