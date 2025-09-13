@@ -100,12 +100,62 @@ function App() {
       }
     };
 
-    // fetch imediado e intervalo
+    // fetch imediato e intervalo (1.5s)
     fetchLast();
-    const id = setInterval(fetchLast, 700);
+    const id = setInterval(fetchLast, 1500);
     return () => {
       mounted = false;
       clearInterval(id);
+    };
+  }, []);
+
+  // Supabase Realtime: inscrever em INSERTs na tabela e disparar fetchLast
+  useEffect(() => {
+    const channel = supabase.channel('public:contabilizacao')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'contabilizacao' }, (payload) => {
+        // Quando houver um novo insert, buscar o último registro imediatamente
+        try {
+          // chamar a query diretamente
+          (async () => {
+            const { data, error } = await supabase
+              .from('contabilizacao')
+              .select('*')
+              .order('id', { ascending: false })
+              .limit(1);
+            if (error) return console.error('Erro ao buscar após INSERT:', error);
+            const row = (data && data[0]) || null;
+            if (row) {
+              const instruments = row.instruments && typeof row.instruments === 'string'
+                ? JSON.parse(row.instruments)
+                : row.instruments || {};
+              const ministerioVal = row.ministerio && typeof row.ministerio === 'string'
+                ? JSON.parse(row.ministerio)
+                : row.ministerio || {};
+
+              setCurrentRecord({ ...row, instruments });
+              setSelected(instruments);
+              setOrganists(row.organists || 0);
+              setMinisterio(ministerioVal);
+
+              if (row.cidade) setCidade(row.cidade);
+              if (row.estado) setEstado(row.estado);
+              if (row.local) setLocal(row.local);
+              if (row.presidencia) setPresidencia(row.presidencia);
+              if (row.palavra) setPalavra(row.palavra);
+              if (row.encarregado) setEncarregado(row.encarregado);
+              if (row.regencia) setRegencia(row.regencia);
+              if (row.hinos) setHinos(row.hinos);
+              if (row.hinosNumeros) setHinosNumeros(row.hinosNumeros);
+            }
+          })();
+        } catch (e) {
+          console.error('Erro no handler realtime:', e);
+        }
+      })
+      .subscribe();
+
+    return () => {
+      if (channel) channel.unsubscribe();
     };
   }, []);
 
