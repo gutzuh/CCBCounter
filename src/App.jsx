@@ -77,9 +77,9 @@ function App() {
     try {
       const data = {
         data: new Date().toISOString().split('T')[0],
-        instruments: JSON.stringify(selected),
+        instruments: selected,
         organists: organists || 0,
-        ministerio: JSON.stringify(ministerio),
+        ministerio: ministerio,
         cidade,
         estado,
         local,

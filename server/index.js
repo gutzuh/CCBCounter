@@ -48,10 +48,22 @@ let lastState = null;
 io.on('connection', (socket) => {
   console.log('Cliente socket conectado:', socket.id);
 
-  // If we have a last known state, send it immediately to the connecting client
-  if (lastState) {
-    socket.emit('contabilizacao', lastState);
-  }
+  // Sempre buscar o último registro persistido no DB e enviar ao cliente
+  db.get('SELECT * FROM contabilizacao ORDER BY id DESC LIMIT 1', [], (err, row) => {
+    if (err) {
+      console.error('Erro ao buscar último registro no DB', err);
+      return;
+    }
+    if (row) {
+      const parsed = { ...row, instruments: row.instruments ? JSON.parse(row.instruments) : {}, id: row.id };
+      // atualizar cache em memória
+      lastState = parsed;
+      socket.emit('contabilizacao', parsed);
+    } else if (lastState) {
+      // fallback para cache em memória se DB vazio
+      socket.emit('contabilizacao', lastState);
+    }
+  });
 
   socket.on('contabilizacao', (payload) => {
     const timestamp = new Date().toISOString();
@@ -83,8 +95,10 @@ io.on('connection', (socket) => {
         return;
       }
       io.emit('reset');
-      // optionally clear lastState after printing
-      lastState = null;
+      // atualizar cache para refletir que foi impresso
+      if (lastState && lastState.id === id) {
+        lastState.printed = 1;
+      }
     });
   });
 

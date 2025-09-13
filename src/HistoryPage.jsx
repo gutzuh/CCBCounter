@@ -47,6 +47,16 @@ export default function HistoryPage({ generateAtaHTML }) {
 
   const viewRecord = (record) => {
     // Preparar dados para visualização
+    const safeParse = (v) => {
+      if (!v) return {};
+      if (typeof v === 'object') return v;
+      try {
+        return JSON.parse(v);
+      } catch {
+        return {};
+      }
+    };
+
     const allData = {
       cidade: record.cidade || '',
       estado: record.estado || '',
@@ -57,9 +67,9 @@ export default function HistoryPage({ generateAtaHTML }) {
       regencia: record.regencia || '',
       hinos: record.hinos || '',
       hinosNumeros: record.hinosNumeros || '',
-      selected: record.instruments ? JSON.parse(record.instruments) : {},
+      selected: safeParse(record.instruments),
       organists: record.organists || 0,
-      ministerio: record.ministerio ? JSON.parse(record.ministerio) : {},
+      ministerio: safeParse(record.ministerio),
       data: record.data
     };
 
