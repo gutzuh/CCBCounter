@@ -1,3 +1,40 @@
+/* Reset global para eliminar margens e paddings padrão */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  max-width: 100vw; /* Garante que não ultrapasse a viewport */
+  height: 100%;
+  overflow-x: hidden; /* Remove qualquer scroll horizontal */
+  display: block !important; /* Sobrescreve o display: flex do index.css */
+  place-items: unset !important; /* Remove o place-items: center do index.css */
+  background-color: transparent !important; /* Remove o background do index.css */
+  color: inherit !important; /* Remove a cor do index.css */
+}
+
+#root {
+  width: 100%;
+  max-width: 100vw; /* Garante que não ultrapasse a viewport */
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden; /* Remove qualquer scroll horizontal */
+  display: block !important; /* Garante que não herde o flex do body */
+}
+
+/* Garante que todos os containers respeitem a largura da viewport */
+.container, .max-w-7xl, .max-w-6xl, .max-w-5xl, .max-w-4xl {
+  max-width: 100vw !important;
+  overflow-x: hidden;
+}
+
+
 .ccb-actions {
   display: flex;
   gap: 1em;

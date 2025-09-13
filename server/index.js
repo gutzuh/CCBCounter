@@ -5,6 +5,7 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell } from 'docx';
 import { Buffer } from 'buffer';
+import { buildDocxBufferFromRow } from '../api/docx.js';
 
 const app = express();
 app.use(cors());
@@ -110,31 +111,21 @@ app.get('/api/contabilizacoes', (req, res) => {
 
 app.get('/api/contabilizacao/:id/docx', (req, res) => {
   const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: 'id required' });
+
   db.get('SELECT * FROM contabilizacao WHERE id = ?', [id], async (err, row) => {
     if (err) return res.status(500).json({ error: err.message });
     if (!row) return res.status(404).json({ error: 'Registro não encontrado' });
-    const instruments = JSON.parse(row.instruments || '{}');
 
-    const doc = new Document();
-    doc.addSection({
-      children: [
-        new Paragraph({ children: [new TextRun({ text: 'Igreja Evangélica Congregacional - CCB', bold: true, size: 24 })], alignment: 'center' }),
-        new Paragraph({ text: 'Ata de Músicos', spacing: { before: 200, after: 200 }, alignment: 'center' }),
-        new Paragraph(`Data: ${new Date(row.data).toLocaleDateString()}`),
-        new Paragraph(`Músicos presentes: ${row.musicians}`),
-        new Paragraph(`Organistas presentes: ${row.organists}`),
-        new Paragraph({ text: '', spacing: { before: 200 } }),
-        new Table({ rows: Object.entries(instruments).map(([name, count]) => new TableRow({ children: [new TableCell({ children: [new Paragraph(name)] }), new TableCell({ children: [new Paragraph(String(count))] })] })) }),
-        new Paragraph({ text: '', spacing: { before: 400 } }),
-        new Paragraph('__________________________________________'),
-        new Paragraph('Assinatura do responsável'),
-      ],
-    });
-
-    const buffer = await Packer.toBuffer(doc);
-    res.setHeader('Content-Disposition', `attachment; filename=ata_${id}.docx`);
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-    res.send(Buffer.from(buffer));
+    try {
+      const buffer = await buildDocxBufferFromRow({ ...row, instruments: row.instruments });
+      res.setHeader('Content-Disposition', `attachment; filename=ata_${id}.docx`);
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+      res.send(buffer);
+    } catch (e) {
+      console.error('Erro ao gerar docx', e);
+      res.status(500).json({ error: 'Erro ao gerar DOCX' });
+    }
   });
 });
 

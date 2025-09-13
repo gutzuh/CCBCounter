@@ -1,136 +1,24 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import './App.css';
-import { Routes, Route, Link } from 'react-router-dom';
+import { Routes, Route, Link, useLocation } from 'react-router-dom';
 import { supabase } from './lib/supabaseClient';
 import PreviewPage from './PreviewPage';
 import HistoryPage from './HistoryPage';
 import AdminPanel from './components/AdminPanel';
-// usamos PNGs em public/icons em vez de componentes SVG
-const IMG = (name) => `/icons/${name}`;
-
-// shallow/deep helpers for our simple state shape
-function isSameState(a, b) {
-  if (!a || !b) return false;
-  if (a.musicians !== b.musicians) return false;
-  if (a.organists !== b.organists) return false;
-  const ia = a.instruments || {};
-  const ib = b.instruments || {};
-  const ka = Object.keys(ia).sort();
-  const kb = Object.keys(ib).sort();
-  if (ka.length !== kb.length) return false;
-  for (let i = 0; i < ka.length; i++) {
-    if (ka[i] !== kb[i]) return false;
-    if (ia[ka[i]] !== ib[kb[i]]) return false;
-  }
-  return true;
-}
-
-function deepClone(obj) {
-  return JSON.parse(JSON.stringify(obj));
-}
-
-function deriveCountsFromSelected(selected) {
-  const instruments = selected || {};
-  let musiciansCount = 0;
-  let organCount = 0;
-  Object.entries(instruments).forEach(([name, count]) => {
-    const n = Number(count || 0);
-    // try to detect by declared INSTRUMENTS family first
-    let isOrgan = false;
-    try {
-      const found = (typeof INSTRUMENTS !== 'undefined') ? INSTRUMENTS.find(i => i.name === name) : null;
-      if (found && found.family) {
-        if (String(found.family).toLowerCase().includes('órg') || String(found.family).toLowerCase().includes('org')) {
-          isOrgan = true;
-        }
-      }
-    } catch (e) {
-      // ignore
-    }
-    // fallback: name-based detection
-    if (!isOrgan) {
-      const lower = name.toLowerCase();
-      if (lower.includes('órgão') || lower.includes('orgao') || lower.includes('órgãos') || lower.includes('orgãos')) {
-        isOrgan = true;
-      }
-    }
-    if (isOrgan) {
-      organCount += n;
-    } else {
-      musiciansCount += n;
-    }
-  });
-  return { musiciansCount, organCount };
-}
-
-// better icons mapping: map certain instruments to emoji or small symbols for clarity
-const ICON_MAP = {
-  'Violino': IMG('violino.png'),
-  'Viola': IMG('violino.png'),
-  'Violoncelo': IMG('tchello.png'),
-  'Órgão eletrônico': IMG('organ.png'), // reuse trompa as keyboard fallback if not provided
-  'Flauta': IMG('flauta.png'),
-  'Clarinete': IMG('flauta.png'),
-  'Oboé': IMG('flauta.png'),
-  'Corne Inglês': IMG('flauta.png'),
-  'Fagote': IMG('flauta.png'),
-  'Clarone': IMG('sax.png'),
-  'Sax Soprano (Sib)': IMG('sax.png'),
-  'Sax Alto (Mib)': IMG('sax.png'),
-  'Sax Tenor (Sib)': IMG('sax.png'),
-  'Sax Barítono (Mib)': IMG('sax.png'),
-  'Trompete': IMG('trompete.png'),
-  'Cornet': IMG('trompete.png'),
-  'Flugelhorn': IMG('trompete.png'),
-  'Trompa': IMG('trompa.png'),
-  'Trombone': IMG('trombone.png'),
-  'Bombardino': IMG('tuba.png'),
-  'Tuba': IMG('tuba.png'),
-  'Trombonito': IMG('trombone.png'),
-};
-
-const INSTRUMENTS = [
-  // Cordas
-  { name: 'Violino', family: 'Cordas', icon: ICON_MAP['Violino'] },
-  { name: 'Viola', family: 'Cordas', icon: ICON_MAP['Viola'] },
-  { name: 'Violoncelo', family: 'Cordas', icon: ICON_MAP['Violoncelo'] },
-
-  // Órgão
-  { name: 'Órgão eletrônico', family: 'Órgão', icon: ICON_MAP['Órgão eletrônico'] },
-
-  // Madeiras
-  { name: 'Flauta', family: 'Madeiras', icon: ICON_MAP['Flauta'] },
-  { name: 'Clarinete', family: 'Madeiras', icon: ICON_MAP['Clarinete'] },
-  { name: 'Oboé', family: 'Madeiras', icon: ICON_MAP['Oboé'] },
-  { name: 'Corne Inglês', family: 'Madeiras', icon: ICON_MAP['Corne Inglês'] },
-  { name: 'Fagote', family: 'Madeiras', icon: ICON_MAP['Fagote'] },
-  { name: 'Clarone', family: 'Madeiras', icon: ICON_MAP['Clarone'] },
-
-  // Saxofones (subgrupo de Madeiras)
-  { name: 'Sax Soprano (Sib)', family: 'Saxofones', icon: ICON_MAP['Sax Soprano (Sib)'] },
-  { name: 'Sax Alto (Mib)', family: 'Saxofones', icon: ICON_MAP['Sax Alto (Mib)'] },
-  { name: 'Sax Tenor (Sib)', family: 'Saxofones', icon: ICON_MAP['Sax Tenor (Sib)'] },
-  { name: 'Sax Barítono (Mib)', family: 'Saxofones', icon: ICON_MAP['Sax Barítono (Mib)'] },
-
-  // Metais
-  { name: 'Trompete', family: 'Metais', icon: ICON_MAP['Trompete'] },
-  { name: 'Cornet', family: 'Metais', icon: ICON_MAP['Cornet'] },
-  { name: 'Flugelhorn', family: 'Metais', icon: ICON_MAP['Flugelhorn'] },
-  // { name: 'Melofone', family: 'Metais', icon: '�' },
-  { name: 'Trompa', family: 'Metais', icon: ICON_MAP['Trompa'] },
-  { name: 'Trombone', family: 'Metais', icon: ICON_MAP['Trombone'] },
-  { name: 'Bombardino', family: 'Metais', icon: ICON_MAP['Bombardino'] },
-  { name: 'Tuba', family: 'Metais', icon: ICON_MAP['Tuba'] },
-  { name: 'Trombonito', family: 'Metais', icon: ICON_MAP['Trombonito'] },
-
-];
+import CCBDataPage from './components/CCBDataPage';
+import MusicosPage from './components/MusicosPage';
+import MinisterioPage from './components/MinisterioPage';
+import { generateAtaHTML, generateAtaStats, validateAtaData } from './utils/AtaGenerator';
 
 function App() {
-  const [musicians, setMusicians] = useState(0);
-  const [organists, setOrganists] = useState(0);
-  const [selected, setSelected] = useState({});
+  const location = useLocation();
   
-  // Novos campos para formato CCB
+  // Estados centralizados
+  const [isLoading, setIsLoading] = useState(false);
+  const [currentRecord, setCurrentRecord] = useState(null);
+  const [lastSaved, setLastSaved] = useState(null);
+
+  // Estados dos dados CCB
   const [cidade, setCidade] = useState('');
   const [estado, setEstado] = useState('');
   const [local, setLocal] = useState('');
@@ -140,149 +28,58 @@ function App() {
   const [regencia, setRegencia] = useState('');
   const [hinos, setHinos] = useState('');
   const [hinosNumeros, setHinosNumeros] = useState('');
+
+  // Estados de contagem
+  const [selected, setSelected] = useState({});
+  const [organists, setOrganists] = useState(0);
   const [ministerio, setMinisterio] = useState({});
-  
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState('');
-  const [currentFamily, setCurrentFamily] = useState('Cordas');
-  // navigation not needed
 
-  const socketRef = useRef(null);
-  const mountedRef = useRef(false);
-  const debounceRef = useRef(null);
-  const heartbeatRef = useRef(null);
-  const [lastSentAt, setLastSentAt] = useState(null);
-  const lastSentPayloadRef = useRef(null);
-  const [adminVisible, setAdminVisible] = useState(false);
-
+  // Inicializar instrumentos padrão CCB
   useEffect(() => {
-      mountedRef.current = true;
+    const instrumentosPadraoCCB = [
+      'Violinos', 'Violas', 'Violoncelos', 'Flautas', 'Acordeons',
+      'Clarinetes', 'Clarones', 'Oboés', 'Saxofones', 'Fagotes',
+      'Cornets', 'Saxhorns', 'Trompetes', 'Trompas', 'Trombonitos',
+      'Trombones', 'Barítonos', 'Bombardinos', 'Bombardões', 'Tubas'
+    ];
 
-      let subscription = null;
-
-      // fetch last saved state from Supabase
-      (async () => {
-        try {
-          const { data: last, error } = await supabase
-            .from('contabilizacao')
-            .select('*')
-            .order('id', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-          if (error) {
-            console.warn('Erro ao buscar último registro', error);
-          }
-          if (last) {
-            setMusicians(last.musicians || 0);
-            setOrganists(last.organists || 0);
-            try { setSelected(typeof last.instruments === 'string' ? JSON.parse(last.instruments) : (last.instruments || {})); } catch (e) { setSelected(last.instruments || {}); }
-          }
-        } catch (e) {
-          console.warn('Falha fetching last', e);
-        }
-      })();
-
-      // subscribe to realtime changes on table contabilizacao
-      try {
-        subscription = supabase
-          .channel('public:contabilizacao')
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'contabilizacao' }, payload => {
-            const rec = payload.new || payload.record || payload;
-            if (!rec) return;
-            // if printed flag set, clear UI
-            if (rec.printed) {
-              setMusicians(0);
-              setOrganists(0);
-              setSelected({});
-              setLastSentAt(null);
-              setSaved(false);
-              return;
-            }
-            const incoming = { musicians: rec.musicians || 0, organists: rec.organists || 0, instruments: typeof rec.instruments === 'string' ? JSON.parse(rec.instruments) : (rec.instruments || {}) };
-            const current = { musicians, organists, instruments: selected };
-            if (isSameState(incoming, current)) return;
-            setMusicians(incoming.musicians);
-            setOrganists(incoming.organists);
-            setSelected(incoming.instruments);
-          })
-          .subscribe();
-      } catch (e) {
-        console.warn('Falha ao subscrever realtime', e);
-      }
-
-      // admin hotkey
-      const onKey = (e) => {
-        if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'a') {
-          setAdminVisible(v => !v);
-        }
-      };
-      window.addEventListener('keydown', onKey);
-
-      return () => {
-        if (debounceRef.current) clearTimeout(debounceRef.current);
-        if (heartbeatRef.current) clearInterval(heartbeatRef.current);
-        try {
-          if (subscription) supabase.removeChannel(subscription);
-        } catch (err) {}
-        window.removeEventListener('keydown', onKey);
-      };
+    const initialInstruments = {};
+    instrumentosPadraoCCB.forEach(instr => {
+      initialInstruments[instr] = 0;
+    });
+    setSelected(initialInstruments);
   }, []);
 
-  const handleInstrumentClick = (name) => {
-    setSelected((prev) => ({
-      ...prev,
-      [name]: prev[name] ? prev[name] + 1 : 1,
-    }));
-    setSaved(false);
-  };
-
-  const handleInstrumentRemove = (name) => {
-    setSelected((prev) => {
-      const updated = { ...prev };
-      if (updated[name] > 1) updated[name]--;
-      else delete updated[name];
-      return updated;
-    });
-    setSaved(false);
-  };
-
-  // keep musicians/organists state derived from selected instruments
+  // Auto-save com debounce
   useEffect(() => {
-    const derived = deriveCountsFromSelected(selected);
-    // only set if different to avoid extra renders
-    if (musicians !== derived.musiciansCount) setMusicians(derived.musiciansCount);
-    if (organists !== derived.organCount) setOrganists(derived.organCount);
-  }, [selected]);
+    const timer = setTimeout(() => {
+      sendContabilizacao();
+    }, 700);
 
-  const generateAta = () => {
-    let ata = `Ata de Músicos - CCB\n\n`;
-    ata += `Músicos presentes: ${musicians}\n`;
-    ata += `Organistas presentes: ${organists}\n\n`;
-    ata += `Instrumentos contabilizados:\n`;
-    Object.entries(selected).forEach(([name, count]) => {
-      ata += `- ${name}: ${count}\n`;
-    });
-    ata += `\nData: ${new Date().toLocaleDateString()}\n`;
-    ata += `\n________________________________________\nAssinatura do responsável\n`;
-    return ata;
-  };
+    return () => clearTimeout(timer);
+  }, [
+    cidade, estado, local, presidencia, palavra, encarregado, regencia, 
+    hinos, hinosNumeros, selected, organists, ministerio
+  ]);
 
-  const printAta = () => {
-    const win = window.open('', '', 'width=800,height=600');
-    win.document.write(`<pre style='font-size:1.2em'>${generateAta()}</pre>`);
-    win.document.close();
-    win.print();
-  };
+  // Heartbeat para sincronização
+  useEffect(() => {
+    const interval = setInterval(() => {
+      sendContabilizacao();
+    }, 12000);
 
-  const sendContabilizacao = (opts = {}) => {
-    setError('');
+    return () => clearInterval(interval);
+  }, []);
+
+  // Função para enviar dados ao Supabase
+  const sendContabilizacao = async () => {
+    setIsLoading(true);
     try {
-      // derive musicians from instruments and organists from organ-family instruments
-      const derived = deriveCountsFromSelected(selected);
-      const payload = { 
-        musicians: derived.musiciansCount, 
-        organists: derived.organCount, 
-        instruments: selected,
+      const data = {
+        data: new Date().toISOString().split('T')[0],
+        instruments: JSON.stringify(selected),
+        organists: organists || 0,
+        ministerio: JSON.stringify(ministerio),
         cidade,
         estado,
         local,
@@ -291,308 +88,513 @@ function App() {
         encarregado,
         regencia,
         hinos,
-        hinosNumeros,
-        ministerio
+        hinosNumeros
       };
-      // avoid emitting identical payload repeatedly
-      if (lastSentPayloadRef.current && isSameState(payload, lastSentPayloadRef.current)) {
-        return; // no-op
+
+      if (currentRecord) {
+        const { data: updated, error } = await supabase
+          .from('contabilizacao')
+          .update(data)
+          .eq('id', currentRecord.id)
+          .select();
+        
+        if (!error && updated?.[0]) {
+          setCurrentRecord(updated[0]);
+          setLastSaved(new Date());
+        }
+      } else {
+        const { data: inserted, error } = await supabase
+          .from('contabilizacao')
+          .insert([data])
+          .select();
+        
+        if (!error && inserted?.[0]) {
+          setCurrentRecord(inserted[0]);
+          setLastSaved(new Date());
+        }
       }
-      // insert into Supabase
-      (async () => {
-        // fetch last snapshot to compute diffs (helps audit)
-        const { data: last } = await supabase.from('contabilizacao').select('*').order('id', { ascending: false }).limit(1).maybeSingle();
-
-        // compute field-level diffs
-        const changes = [];
-        const lastInstruments = (last && last.instruments) ? (typeof last.instruments === 'string' ? JSON.parse(last.instruments) : last.instruments) : {};
-        if (!last || (last.musicians || 0) !== payload.musicians) {
-          changes.push({ field: 'musicians', old_value: last ? last.musicians || 0 : 0, new_value: payload.musicians });
-        }
-        if (!last || (last.organists || 0) !== payload.organists) {
-          changes.push({ field: 'organists', old_value: last ? last.organists || 0 : 0, new_value: payload.organists });
-        }
-        // instruments per-item diffs
-        const allKeys = Array.from(new Set([...Object.keys(lastInstruments || {}), ...Object.keys(payload.instruments || {})]));
-        allKeys.forEach((k) => {
-          const oldv = Number(lastInstruments[k] || 0);
-          const newv = Number(payload.instruments[k] || 0);
-          if (oldv !== newv) {
-            changes.push({ field: `instrument.${k}`, old_value: oldv, new_value: newv });
-          }
-        });
-
-        const { data, error } = await supabase.from('contabilizacao').insert([{ 
-          data: new Date().toISOString(), 
-          musicians: payload.musicians, 
-          organists: payload.organists, 
-          instruments: JSON.stringify(payload.instruments),
-          cidade: payload.cidade,
-          estado: payload.estado,
-          local: payload.local,
-          presidencia: payload.presidencia,
-          palavra: payload.palavra,
-          encarregado: payload.encarregado,
-          regencia: payload.regencia,
-          hinos: payload.hinos,
-          hinosNumeros: payload.hinosNumeros,
-          ministerio: JSON.stringify(payload.ministerio),
-          printed: 0 
-        }]);
-        if (error) {
-          if (!opts.silent) setError('Falha ao enviar dados: ' + error.message);
-          return;
-        }
-
-        const inserted = Array.isArray(data) ? data[0] : data;
-        // write change log rows referencing the new snapshot id
-        if (changes.length > 0) {
-          const changeRows = changes.map(ch => ({
-            contabilizacao_id: inserted && inserted.id ? inserted.id : null,
-            data: new Date().toISOString(),
-            field: ch.field,
-            old_value: String(ch.old_value),
-            new_value: String(ch.new_value)
-          }));
-          try {
-            await supabase.from('contabilizacao_changes').insert(changeRows);
-          } catch (e) {
-            console.warn('Falha ao registrar mudanças de auditoria', e);
-          }
-        }
-
-        lastSentPayloadRef.current = deepClone(payload);
-        setSaved(true);
-        setLastSentAt(new Date().toISOString());
-      })();
-    } catch (e) {
-      if (!opts.silent) setError('Falha ao enviar dados em tempo real.');
+    } catch (error) {
+      console.error('Erro ao salvar:', error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  // Auto-send when user changes inputs (debounced) + periodic heartbeat
-  useEffect(() => {
-    // don't auto-send on first mount
-    if (!mountedRef.current) return;
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      sendContabilizacao();
-    }, 700);
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, [musicians, organists, selected, cidade, estado, local, presidencia, palavra, encarregado, regencia, hinos, hinosNumeros, ministerio]);
-
-  // heartbeat to re-broadcast current state periodically (keeps others in sync)
-  useEffect(() => {
-    heartbeatRef.current = setInterval(() => {
-      sendContabilizacao({ silent: true });
-    }, 12000);
-    return () => clearInterval(heartbeatRef.current);
-  }, [musicians, organists, selected, cidade, estado, local, presidencia, palavra, encarregado, regencia, hinos, hinosNumeros, ministerio]);
-
-  const onAdminApply = (cmd) => {
-    if (cmd.type === 'force-send') {
-      const derived = deriveCountsFromSelected(selected);
-      const payload = { musicians: derived.musiciansCount, organists: derived.organCount, instruments: selected, admin: true };
-      (async () => {
-        // fetch last snapshot
-        const { data: last } = await supabase.from('contabilizacao').select('*').order('id', { ascending: false }).limit(1).maybeSingle();
-        const lastInstruments = (last && last.instruments) ? (typeof last.instruments === 'string' ? JSON.parse(last.instruments) : last.instruments) : {};
-        const changes = [];
-        if (!last || (last.musicians || 0) !== payload.musicians) changes.push({ field: 'musicians', old_value: last ? last.musicians || 0 : 0, new_value: payload.musicians });
-        if (!last || (last.organists || 0) !== payload.organists) changes.push({ field: 'organists', old_value: last ? last.organists || 0 : 0, new_value: payload.organists });
-        const allKeys = Array.from(new Set([...Object.keys(lastInstruments || {}), ...Object.keys(payload.instruments || {})]));
-        allKeys.forEach((k) => {
-          const oldv = Number(lastInstruments[k] || 0);
-          const newv = Number(payload.instruments[k] || 0);
-          if (oldv !== newv) changes.push({ field: `instrument.${k}`, old_value: oldv, new_value: newv });
-        });
-
-        const { data, error } = await supabase.from('contabilizacao').insert([{ data: new Date().toISOString(), musicians: payload.musicians, organists: payload.organists, instruments: JSON.stringify(payload.instruments), printed: 0, admin: true }]);
-        if (error) {
-          console.warn('Erro admin force-send', error);
-        } else {
-          const inserted = Array.isArray(data) ? data[0] : data;
-          if (changes.length > 0) {
-            const changeRows = changes.map(ch => ({ contabilizacao_id: inserted && inserted.id ? inserted.id : null, data: new Date().toISOString(), field: ch.field, old_value: String(ch.old_value), new_value: String(ch.new_value) }));
-            try { await supabase.from('contabilizacao_changes').insert(changeRows); } catch (e) { console.warn('Falha ao registrar mudanças de auditoria (admin)', e); }
-          }
-          lastSentPayloadRef.current = deepClone(payload);
-          setLastSentAt(new Date().toISOString());
-        }
-      })();
-    }
-    if (cmd.type === 'reset') {
-      // mark last record printed
-      (async () => {
-        const { data: last } = await supabase.from('contabilizacao').select('*').order('id', { ascending: false }).limit(1).maybeSingle();
-        if (!last) return;
-        await supabase.from('contabilizacao').update({ printed: 1 }).eq('id', last.id);
-      })();
+  // Função para resetar todos os dados
+  const resetAllData = () => {
+    if (confirm('Tem certeza que deseja limpar todos os dados?')) {
+      setCidade('');
+      setEstado('');
+      setLocal('');
+      setPresidencia('');
+      setPalavra('');
+      setEncarregado('');
+      setRegencia('');
+      setHinos('');
+      setHinosNumeros('');
+      setSelected({});
+      setOrganists(0);
+      setMinisterio({});
+      setCurrentRecord(null);
+      setLastSaved(null);
     }
   };
 
-  const buildAtaHtml = () => {
-    const dateStr = new Date().toLocaleDateString();
-    const rows = Object.entries(selected).map(([name, count]) => `<tr><td>${name}</td><td style="text-align:right">${count}</td></tr>`).join('');
-    const derived = deriveCountsFromSelected(selected);
-    const musiciansForAta = derived.musiciansCount;
-    const organistsForAta = derived.organCount;
-    return `
-      <div style="font-family: Arial, Helvetica, sans-serif; color:#000; padding:40px;">
-        <h2 style="text-align:center;">Igreja Evangélica Congregacional - CCB</h2>
-        <h3 style="text-align:center; margin-top:0">Ata de Músicos</h3>
-        <p><strong>Data:</strong> ${dateStr}</p>
-      <p><strong>Músicos presentes:</strong> ${musiciansForAta}</p>
-      <p><strong>Organistas presentes:</strong> ${organistsForAta}</p>
-        <table style="width:100%; border-collapse: collapse; margin-top:20px;">
-          <thead>
-            <tr>
-              <th style="text-align:left; border-bottom:1px solid #333; padding-bottom:8px">Instrumento</th>
-              <th style="text-align:right; border-bottom:1px solid #333; padding-bottom:8px">Quantidade</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows}
-          </tbody>
-        </table>
-        <p style="margin-top:40px">__________________________________________</p>
-        <p>Assinatura do responsável</p>
-      </div>
-    `;
+  // Dados consolidados para as páginas
+  const allData = {
+    cidade, estado, local, presidencia, palavra, encarregado, regencia,
+    hinos, hinosNumeros, selected, organists, ministerio,
+    data: new Date().toISOString().split('T')[0]
   };
 
-  const ataHtml = buildAtaHtml();
-  function buildAtaHtmlFromRecord(record) {
-    const dateStr = new Date(record.data).toLocaleDateString();
-    const instruments = record.instruments ? record.instruments : record.instruments;
-    const parsed = typeof instruments === 'string' ? JSON.parse(instruments) : instruments;
-    const rows = Object.entries(parsed).map(([name, count]) => `<tr><td>${name}</td><td style="text-align:right">${count}</td></tr>`).join('');
-    return `
-      <div style="font-family: Arial, Helvetica, sans-serif; color:#000; padding:40px;">
-        <h2 style="text-align:center;">Igreja Evangélica Congregacional - CCB</h2>
-        <h3 style="text-align:center; margin-top:0">Ata de Músicos</h3>
-        <p><strong>Data:</strong> ${dateStr}</p>
-        <p><strong>Músicos presentes:</strong> ${record.musicians}</p>
-        <p><strong>Organistas presentes:</strong> ${record.organists}</p>
-        <table style="width:100%; border-collapse: collapse; margin-top:20px;">
-          <thead>
-            <tr>
-              <th style="text-align:left; border-bottom:1px solid #333; padding-bottom:8px">Instrumento</th>
-              <th style="text-align:right; border-bottom:1px solid #333; padding-bottom:8px">Quantidade</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows}
-          </tbody>
-        </table>
-        <p style="margin-top:40px">__________________________________________</p>
-        <p>Assinatura do responsável</p>
-      </div>
-    `;
-  }
+  // Estatísticas e validação
+  const stats = generateAtaStats(allData);
+  const validation = validateAtaData(allData);
 
-  // remoteNotice removed — remote updates are applied instantly
+  // Título da página baseado na rota
+  const getPageTitle = () => {
+    switch (location.pathname) {
+      case '/dados-ccb': return '📋 Dados do Ensaio';
+      case '/musicos': return '🎼 Contagem de Músicos';
+      case '/ministerio': return '⛪ Ministério';
+      case '/preview': return '👁️ Visualizar Ata';
+      case '/history': return '📚 Histórico';
+      case '/admin': return '⚙️ Administração';
+      default: return '🏠 CCB Counter';
+    }
+  };
 
   return (
-    <Routes>
-      <Route path="/" element={(
-        <div className="min-h-screen bg-gray-100 p-4">
-          {/* mobile admin toggle: visible only on small screens */}
-          <div className="md:hidden fixed bottom-4 right-4 z-50">
-            <button onClick={() => setAdminVisible(v => !v)} className="bg-indigo-600 text-white p-3 rounded-full shadow-lg" aria-label="Abrir admin">⚙️</button>
-          </div>
-          <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-md p-6">
-            <header className="flex items-center justify-between mb-6">
-              <h1 className="text-2xl font-semibold">Contabilização de Músicos - CCB</h1>
-              <nav className="space-x-4">
-                <Link to="/" className="text-indigo-600 font-medium">Início</Link>
-                <Link to="/history" className="text-gray-600">Histórico</Link>
-                <Link to="/preview" state={{ ataHtml }} className="text-gray-600">Pré-visualizar</Link>
-              </nav>
-            </header>
-
-            {adminVisible && (
-              <div className="my-4">
-                <AdminPanel onApply={onAdminApply} onClose={() => setAdminVisible(false)} />
+    <div className="min-h-screen w-full bg-gradient-to-br from-blue-50 via-white to-purple-50 overflow-x-hidden">
+      {/* Header Moderno */}
+      <header className="bg-gradient-to-r from-blue-900 via-blue-800 to-indigo-900 text-white shadow-2xl w-full">
+        <div className="max-w-full mx-auto px-4 py-6">
+          <div className="flex justify-between items-center">
+            <div className="flex items-center gap-4">
+              <div className="bg-white bg-opacity-20 p-3 rounded-full">
+                <span className="text-2xl">⛪</span>
               </div>
-            )}
-
-            {/* remote updates are applied instantly; no notice UI */}
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-              <div className="md:col-span-2">
-                <div className="flex gap-4 mb-4">
-                  <label className="flex-1">
-                    <div className="text-sm text-gray-500">Músicos presentes</div>
-                    <input className="mt-1 w-full border rounded px-3 py-2" type="number" min={0} value={musicians} onChange={e => setMusicians(Number(e.target.value))} />
-                  </label>
-                  <label className="w-40">
-                    <div className="text-sm text-gray-500">Organistas</div>
-                    <input className="mt-1 w-full border rounded px-3 py-2" type="number" min={0} value={organists} onChange={e => setOrganists(Number(e.target.value))} />
-                  </label>
-                </div>
-
-                <div className="mb-3">
-                  <div className="flex flex-wrap gap-2">
-                    {Array.from(new Set(INSTRUMENTS.map(i => i.family))).map(f => (
-                      <button key={f} onClick={() => setCurrentFamily(f)} className={`px-3 py-1 rounded ${currentFamily === f ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-700'}`}>{f}</button>
-                    ))}
+              <div>
+                <h1 className="text-3xl font-bold bg-gradient-to-r from-white to-blue-100 bg-clip-text text-transparent">
+                  CCB Counter
+                </h1>
+                <p className="text-blue-200 text-sm flex items-center gap-2">
+                  <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+                  {getPageTitle()}
+                  {currentRecord && lastSaved && (
+                    <span className="ml-4 bg-blue-700 px-2 py-1 rounded-full text-xs">
+                      💾 {lastSaved?.toLocaleTimeString()}
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
+            
+            {/* Estatísticas rápidas melhoradas */}
+            <div className="hidden lg:flex gap-4">
+              <div className="bg-white bg-opacity-10 backdrop-blur-sm px-4 py-3 rounded-xl border border-white border-opacity-20">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">🎼</span>
+                  <div>
+                    <p className="text-xs text-blue-200">Músicos</p>
+                    <p className="text-xl font-bold">{stats.totalMusicos}</p>
                   </div>
                 </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                  {INSTRUMENTS.filter(i => i.family === currentFamily).map(inst => (
-                    <div key={inst.name} className="bg-gray-50 border rounded p-3 flex flex-col items-center">
-                      <div className="text-3xl">
-                        {inst.icon ? (
-                          typeof inst.icon === 'string' ? (
-                            <img src={inst.icon} alt={inst.name} width={36} height={36} className="object-contain" />
-                          ) : (
-                            // previously supported components; fallback to null
-                            null
-                          )
-                        ) : null}
-                      </div>
-                      <div className="mt-2 text-sm font-medium text-gray-700 text-center">{inst.name}</div>
-                      <div className="mt-3 flex items-center gap-2">
-                        <button className="w-9 h-9 bg-red-100 text-red-700 rounded" onClick={() => handleInstrumentRemove(inst.name)}>−</button>
-                        <div className="w-8 text-center font-bold">{selected[inst.name] || 0}</div>
-                        <button className="w-9 h-9 bg-green-100 text-green-700 rounded" onClick={() => handleInstrumentClick(inst.name)}>+</button>
-                      </div>
-                    </div>
-                  ))}
+              </div>
+              <div className="bg-white bg-opacity-10 backdrop-blur-sm px-4 py-3 rounded-xl border border-white border-opacity-20">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">🎹</span>
+                  <div>
+                    <p className="text-xs text-blue-200">Organistas</p>
+                    <p className="text-xl font-bold">{stats.totalOrganistas}</p>
+                  </div>
                 </div>
               </div>
-
-              <aside className="bg-gray-50 border rounded p-4">
-                <h3 className="text-sm font-semibold mb-2">Resumo</h3>
-                <div className="text-sm text-gray-600 mb-2">Músicos: <span className="font-medium">{musicians}</span></div>
-                <div className="text-sm text-gray-600 mb-4">Organistas: <span className="font-medium">{organists}</span></div>
-                <div className="space-y-2 max-h-64 overflow-auto">
-                  {Object.entries(selected).length === 0 && <div className="text-xs text-gray-500">Nenhum instrumento selecionado</div>}
-                  {Object.entries(selected).map(([k,v]) => (
-                    <div key={k} className="flex justify-between text-sm">
-                      <div>{k}</div>
-                      <div className="font-medium">{v}</div>
-                    </div>
-                  ))}
+              <div className="bg-white bg-opacity-10 backdrop-blur-sm px-4 py-3 rounded-xl border border-white border-opacity-20">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">⛪</span>
+                  <div>
+                    <p className="text-xs text-blue-200">Ministério</p>
+                    <p className="text-xl font-bold">{stats.totalMinisterio}</p>
+                  </div>
                 </div>
-                <div className="mt-4">
-                  <div className="text-xs text-gray-500">Atualizações são enviadas automaticamente (debounce 700ms).</div>
-                  {lastSentAt && <div className="text-xs text-green-600 mt-2">Última atualização enviada: {new Date(lastSentAt).toLocaleTimeString()}</div>}
-                </div>
-                {saved && <div className="mt-3 text-sm text-green-600">Estado enviado para outros usuários em tempo real.</div>}
-                {error && <div className="mt-3 text-sm text-red-600">{error}</div>}
-              </aside>
+              </div>
             </div>
           </div>
         </div>
-      )} />
-      <Route path="/preview" element={<PreviewPage ataHtml={ataHtml} />} />
-      <Route path="/history" element={<HistoryPage />} />
-    </Routes>
+      </header>
+
+      {/* Navigation Moderna */}
+      <nav className="bg-white shadow-lg border-b-2 border-blue-100 sticky top-0 z-40 backdrop-blur-md w-full">
+        <div className="max-w-full mx-auto px-4">
+          <div className="flex gap-1 overflow-x-auto scrollbar-hide">
+            <NavLink to="/">🏠 Início</NavLink>
+            <NavLink to="/dados-ccb">📋 Dados CCB</NavLink>
+            <NavLink to="/musicos">🎼 Músicos</NavLink>
+            <NavLink to="/ministerio">⛪ Ministério</NavLink>
+            <NavLink to="/preview">👁️ Prévia</NavLink>
+            <NavLink to="/history">📚 Histórico</NavLink>
+            <NavLink to="/admin">⚙️ Admin</NavLink>
+          </div>
+        </div>
+      </nav>
+
+      {/* Status Bar Melhorado */}
+      {(validation.errors.length > 0 || validation.warnings.length > 0) && (
+        <div className="bg-gradient-to-r from-yellow-50 to-orange-50 border-l-4 border-yellow-400 p-4 shadow-sm w-full">
+          <div className="max-w-full mx-auto">
+            {validation.errors.length > 0 && (
+              <div className="mb-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-6 h-6 bg-red-100 rounded-full flex items-center justify-center">
+                    <span className="text-red-600 text-sm">❌</span>
+                  </div>
+                  <p className="text-red-700 font-semibold">Erros encontrados:</p>
+                </div>
+                <ul className="text-red-600 text-sm space-y-1 ml-8">
+                  {validation.errors.map((error, index) => (
+                    <li key={index} className="flex items-center gap-2">
+                      <span className="w-1 h-1 bg-red-400 rounded-full"></span>
+                      {error}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {validation.warnings.length > 0 && (
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-6 h-6 bg-yellow-100 rounded-full flex items-center justify-center">
+                    <span className="text-yellow-600 text-sm">⚠️</span>
+                  </div>
+                  <p className="text-yellow-700 font-semibold">Avisos:</p>
+                </div>
+                <ul className="text-yellow-600 text-sm space-y-1 ml-8">
+                  {validation.warnings.map((warning, index) => (
+                    <li key={index} className="flex items-center gap-2">
+                      <span className="w-1 h-1 bg-yellow-400 rounded-full"></span>
+                      {warning}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Main Content */}
+      <main className="w-full max-w-full px-4 py-8 overflow-x-hidden">
+        <Routes>
+          <Route path="/" element={<HomePage stats={stats} validation={validation} onReset={resetAllData} />} />
+          
+          <Route path="/dados-ccb" element={
+            <CCBDataPage
+              cidade={cidade} setCidade={setCidade}
+              estado={estado} setEstado={setEstado}
+              local={local} setLocal={setLocal}
+              presidencia={presidencia} setPresidencia={setPresidencia}
+              palavra={palavra} setPalavra={setPalavra}
+              encarregado={encarregado} setEncarregado={setEncarregado}
+              regencia={regencia} setRegencia={setRegencia}
+              hinos={hinos} setHinos={setHinos}
+              hinosNumeros={hinosNumeros} setHinosNumeros={setHinosNumeros}
+            />
+          } />
+          
+          <Route path="/musicos" element={
+            <MusicosPage
+              selected={selected} setSelected={setSelected}
+              organists={organists} setOrganists={setOrganists}
+            />
+          } />
+          
+          <Route path="/ministerio" element={
+            <MinisterioPage
+              ministerio={ministerio} setMinisterio={setMinisterio}
+            />
+          } />
+          
+          <Route path="/preview" element={
+            <PreviewPage
+              allData={allData}
+              generateAtaHTML={generateAtaHTML}
+              currentRecord={currentRecord}
+            />
+          } />
+          
+          <Route path="/history" element={
+            <HistoryPage generateAtaHTML={generateAtaHTML} />
+          } />
+          
+          <Route path="/admin" element={<AdminPanel />} />
+        </Routes>
+      </main>
+
+      {/* Loading Indicator Melhorado */}
+      {isLoading && (
+        <div className="fixed bottom-6 right-6 z-50">
+          <div className="bg-white shadow-2xl rounded-2xl p-4 border border-blue-100">
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <div className="w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-xs">💾</span>
+                </div>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-800">Salvando dados...</p>
+                <p className="text-xs text-gray-500">Sincronizando com o servidor</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Componente para links de navegação melhorado
+function NavLink({ to, children }) {
+  const location = useLocation();
+  const isActive = location.pathname === to;
+  
+  return (
+    <Link
+      to={to}
+      className={`relative px-6 py-4 text-sm font-medium transition-all duration-300 whitespace-nowrap group ${
+        isActive
+          ? 'text-blue-600 bg-gradient-to-br from-blue-50 to-blue-100 border-b-3 border-blue-500'
+          : 'text-gray-600 hover:text-blue-600 hover:bg-gradient-to-br hover:from-gray-50 hover:to-blue-50'
+      }`}
+    >
+      <span className="relative z-10">{children}</span>
+      {isActive && (
+        <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full"></div>
+      )}
+      {!isActive && (
+        <div className="absolute bottom-0 left-1/2 w-0 h-1 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full transition-all duration-300 group-hover:w-full group-hover:left-0"></div>
+      )}
+    </Link>
+  );
+}
+
+// Página inicial com dashboard moderno
+function HomePage({ stats, validation, onReset }) {
+  return (
+    <div className="space-y-8">
+      {/* Hero Section */}
+      <div className="text-center relative">
+        <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 to-purple-600/10 rounded-3xl -z-10"></div>
+        <div className="py-12 px-6">
+          <div className="flex justify-center mb-6">
+            <div className="bg-gradient-to-br from-blue-600 to-purple-600 p-4 rounded-full shadow-2xl">
+              <span className="text-4xl">⛪</span>
+            </div>
+          </div>
+          <h2 className="text-4xl font-bold bg-gradient-to-r from-blue-800 via-purple-700 to-blue-800 bg-clip-text text-transparent mb-4">
+            Sistema de Contabilização CCB
+          </h2>
+          <p className="text-gray-600 text-xl max-w-2xl mx-auto">
+            Gerencie os dados do ensaio regional de forma organizada e padronizada, 
+            seguindo exatamente o formato oficial da Congregação Cristã no Brasil
+          </p>
+        </div>
+      </div>
+
+      {/* Cards de estatísticas melhorados */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <StatCard
+          title="Total de Músicos"
+          value={stats.totalMusicos}
+          icon="🎼"
+          color="blue"
+          subtitle="Instrumentistas presentes"
+        />
+        <StatCard
+          title="Total de Organistas"
+          value={stats.totalOrganistas}
+          icon="🎹"
+          color="purple"
+          subtitle="Organistas no ensaio"
+        />
+        <StatCard
+          title="Ministério Presente"
+          value={stats.totalMinisterio}
+          icon="⛪"
+          color="green"
+          subtitle="Cargos representados"
+        />
+        <StatCard
+          title="Total Geral"
+          value={stats.totalGeral}
+          icon="👥"
+          color="indigo"
+          subtitle="Participantes totais"
+        />
+      </div>
+
+      {/* Status da validação melhorado */}
+      <div className="bg-white p-8 rounded-2xl shadow-xl border border-gray-100">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="bg-gradient-to-br from-blue-600 to-purple-600 p-2 rounded-lg">
+            <span className="text-white text-xl">📋</span>
+          </div>
+          <h3 className="text-2xl font-bold text-gray-800">Status da Ata</h3>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="text-center p-4 bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl">
+            <p className="text-sm text-gray-600 mb-3">Completude dos dados</p>
+            <div className="flex items-center justify-center gap-2">
+              {validation.isValid ? (
+                <div className="flex items-center gap-2 text-green-600">
+                  <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                    <span className="text-green-600">✅</span>
+                  </div>
+                  <span className="font-semibold">Dados completos</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-red-600">
+                  <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center">
+                    <span className="text-red-600">❌</span>
+                  </div>
+                  <span className="font-semibold">Dados incompletos</span>
+                </div>
+              )}
+            </div>
+          </div>
+          
+          <div className="text-center p-4 bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl">
+            <p className="text-sm text-gray-600 mb-3">Instrumentos ativos</p>
+            <div className="flex items-center justify-center gap-2">
+              <span className="text-3xl font-bold text-blue-600">{stats.instrumentosAtivos}</span>
+              <span className="text-gray-500">de 20</span>
+            </div>
+          </div>
+          
+          <div className="text-center p-4 bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl">
+            <p className="text-sm text-gray-600 mb-3">Cargos cadastrados</p>
+            <div className="flex items-center justify-center gap-2">
+              <span className="text-3xl font-bold text-purple-600">{stats.cargosMinisterio || 0}</span>
+              <span className="text-gray-500">cargos</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Ações rápidas melhoradas */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <QuickActionCard
+          title="Dados do Ensaio"
+          description="Configure cidade, local, presidência e informações básicas do ensaio regional"
+          icon="📋"
+          to="/dados-ccb"
+          color="blue"
+        />
+        <QuickActionCard
+          title="Contagem de Músicos"
+          description="Registre a quantidade de músicos por instrumento seguindo padrão CCB"
+          icon="🎼"
+          to="/musicos"
+          color="green"
+        />
+        <QuickActionCard
+          title="Ministério"
+          description="Adicione cargos e nomes dos irmãos presentes no ensaio"
+          icon="⛪"
+          to="/ministerio"
+          color="purple"
+        />
+      </div>
+
+      {/* Botão de reset melhorado */}
+      <div className="text-center pt-4">
+        <button
+          onClick={onReset}
+          className="group px-8 py-4 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-2xl hover:from-red-700 hover:to-red-800 transition-all duration-300 shadow-lg hover:shadow-xl transform hover:-translate-y-1"
+        >
+          <span className="flex items-center gap-3">
+            <span className="text-xl group-hover:animate-bounce">🗑️</span>
+            <span className="font-semibold">Limpar Todos os Dados</span>
+          </span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Componente para cards de estatísticas melhorado
+function StatCard({ title, value, icon, color, subtitle }) {
+  const colorClasses = {
+    blue: 'from-blue-50 to-blue-100 border-blue-200 text-blue-700',
+    purple: 'from-purple-50 to-purple-100 border-purple-200 text-purple-700',
+    green: 'from-green-50 to-green-100 border-green-200 text-green-700',
+    indigo: 'from-indigo-50 to-indigo-100 border-indigo-200 text-indigo-700'
+  };
+
+  const iconColors = {
+    blue: 'text-blue-600',
+    purple: 'text-purple-600',
+    green: 'text-green-600',
+    indigo: 'text-indigo-600'
+  };
+
+  return (
+    <div className={`bg-gradient-to-br ${colorClasses[color]} p-6 rounded-2xl border shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1`}>
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex-1">
+          <p className="text-sm font-medium text-gray-600 mb-1">{title}</p>
+          <p className="text-3xl font-bold text-gray-800">{value}</p>
+          {subtitle && <p className="text-xs text-gray-500 mt-1">{subtitle}</p>}
+        </div>
+        <div className={`text-4xl ${iconColors[color]} opacity-80`}>
+          {icon}
+        </div>
+      </div>
+      <div className={`h-1 bg-gradient-to-r ${color === 'blue' ? 'from-blue-400 to-blue-600' : 
+                                                 color === 'purple' ? 'from-purple-400 to-purple-600' :
+                                                 color === 'green' ? 'from-green-400 to-green-600' :
+                                                 'from-indigo-400 to-indigo-600'} rounded-full`}></div>
+    </div>
+  );
+}
+
+// Componente para cards de ação rápida melhorado
+function QuickActionCard({ title, description, icon, to, color }) {
+  const colorClasses = {
+    blue: 'hover:from-blue-50 hover:to-blue-100 border-blue-200 hover:border-blue-300 hover:shadow-blue-200/50',
+    green: 'hover:from-green-50 hover:to-green-100 border-green-200 hover:border-green-300 hover:shadow-green-200/50',
+    purple: 'hover:from-purple-50 hover:to-purple-100 border-purple-200 hover:border-purple-300 hover:shadow-purple-200/50'
+  };
+
+  const iconColors = {
+    blue: 'text-blue-600',
+    green: 'text-green-600',
+    purple: 'text-purple-600'
+  };
+
+  return (
+    <Link
+      to={to}
+      className={`group block p-6 bg-white rounded-2xl border-2 transition-all duration-300 hover:bg-gradient-to-br ${colorClasses[color]} hover:shadow-xl transform hover:-translate-y-1`}
+    >
+      <div className="flex items-start gap-4">
+        <div className={`text-4xl ${iconColors[color]} group-hover:scale-110 transition-transform duration-300`}>
+          {icon}
+        </div>
+        <div className="flex-1">
+          <h4 className="text-xl font-bold text-gray-800 mb-2 group-hover:text-gray-900">{title}</h4>
+          <p className="text-gray-600 text-sm leading-relaxed group-hover:text-gray-700">{description}</p>
+          <div className="mt-3 flex items-center text-sm font-medium text-gray-500 group-hover:text-gray-700">
+            <span>Acessar</span>
+            <svg className="w-4 h-4 ml-1 transform group-hover:translate-x-1 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </div>
+        </div>
+      </div>
+    </Link>
   );
 }
 

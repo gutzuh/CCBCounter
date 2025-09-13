@@ -12,6 +12,25 @@ dist
 dist-ssr
 *.local
 
+# Environment files
+.env
+.env.*
+
+# Local databases
+*.db
+*.sqlite
+ccb.db
+db/
+# Secrets and keys
+secrets
+*.key
+*.pem
+private.key
+
+# Mac / Linux swap and temp files
+*~
+.vscode/.history
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

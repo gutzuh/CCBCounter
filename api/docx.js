@@ -1,9 +1,16 @@
 import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, BorderStyle } from 'docx';
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_KEY; // service role key for server operations
-const supabase = createClient(supabaseUrl, supabaseKey);
+// Lazy supabase client: only initialize inside the handler when env vars exist
+let supabase = null;
+function getSupabase() {
+  if (supabase) return supabase;
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
+  if (!supabaseUrl || !supabaseKey) return null;
+  supabase = createClient(supabaseUrl, supabaseKey);
+  return supabase;
+}
 
 function safeParseInstruments(field) {
   if (!field) return {};
@@ -29,14 +36,7 @@ function sumInstrumentCounts(instruments) {
   return Object.values(instruments).reduce((s, v) => s + Number(v || 0), 0);
 }
 
-export default async function handler(req, res) {
-  const id = req.query.id;
-  if (!id) return res.status(400).send('id required');
-
-  const { data: row, error } = await supabase.from('contabilizacao').select('*').eq('id', Number(id)).maybeSingle();
-  if (error) return res.status(500).json({ error: error.message });
-  if (!row) return res.status(404).json({ error: 'Registro não encontrado' });
-
+export async function buildDocxBufferFromRow(row) {
   const instruments = safeParseInstruments(row.instruments);
   const ministerio = safeParseMinisterio(row.ministerio);
   
@@ -140,27 +140,39 @@ export default async function handler(req, res) {
     spacing: { before: 200, after: 120 }
   });
 
-  // Tabela de instrumentos
+  // Tabela de instrumentos - seguindo padrão CCB completo
   const instrumentRows = [];
-  const entries = Object.entries(instruments || {});
   
-  if (entries.length === 0) {
+  // Lista padrão de instrumentos CCB na ordem correta
+  const instrumentosPadraoCCB = [
+    'Violinos', 'Violas', 'Violoncelos', 'Flautas', 'Acordeons',
+    'Clarinetes', 'Clarones', 'Oboés', 'Saxofones', 'Fagotes',
+    'Cornets', 'Saxhorns', 'Trompetes', 'Trompas', 'Trombonitos',
+    'Trombones', 'Barítonos', 'Bombardinos', 'Bombardões', 'Tubas'
+  ];
+
+  // Primeiro, adicionar instrumentos na ordem padrão CCB
+  instrumentosPadraoCCB.forEach(nome => {
+    const count = instruments[nome] || 0;
     instrumentRows.push(new TableRow({
       children: [
-        new TableCell({ children: [new Paragraph('—')], width: { size: 70, type: WidthType.PERCENTAGE } }),
-        new TableCell({ children: [new Paragraph('0')], width: { size: 30, type: WidthType.PERCENTAGE } })
+        new TableCell({ children: [new Paragraph(nome)], width: { size: 70, type: WidthType.PERCENTAGE } }),
+        new TableCell({ children: [new Paragraph(String(count))], width: { size: 30, type: WidthType.PERCENTAGE } })
       ]
     }));
-  } else {
-    entries.forEach(([name, count]) => {
+  });
+
+  // Depois, adicionar instrumentos extras que não estão na lista padrão
+  Object.entries(instruments || {}).forEach(([name, count]) => {
+    if (!instrumentosPadraoCCB.includes(name)) {
       instrumentRows.push(new TableRow({
         children: [
           new TableCell({ children: [new Paragraph(name)], width: { size: 70, type: WidthType.PERCENTAGE } }),
           new TableCell({ children: [new Paragraph(String(count))], width: { size: 30, type: WidthType.PERCENTAGE } })
         ]
       }));
-    });
-  }
+    }
+  });
 
   // Linhas de totais
   instrumentRows.push(
@@ -242,7 +254,21 @@ export default async function handler(req, res) {
   });
 
   const buffer = await Packer.toBuffer(doc);
+  return Buffer.from(buffer);
+}
+
+export default async function handler(req, res) {
+  const id = req.query.id;
+  if (!id) return res.status(400).send('id required');
+  const client = getSupabase();
+  if (!client) return res.status(500).json({ error: 'Supabase not configured (SUPABASE_URL / SUPABASE_SERVICE_KEY missing)' });
+
+  const { data: row, error } = await client.from('contabilizacao').select('*').eq('id', Number(id)).maybeSingle();
+  if (error) return res.status(500).json({ error: error.message });
+  if (!row) return res.status(404).json({ error: 'Registro não encontrado' });
+
+  const buffer = await buildDocxBufferFromRow(row);
   res.setHeader('Content-Disposition', `attachment; filename=ata_${id}.docx`);
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-  res.send(Buffer.from(buffer));
+  res.send(buffer);
 }
