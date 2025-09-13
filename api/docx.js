@@ -232,19 +232,12 @@ export default async function handler(req, res) {
     rows: ministerioRows
   });
 
-  // Rodapé
-  const footer = new Paragraph({
-    children: [new TextRun({ text: 'Página 1/1', size: 18 })],
-    alignment: AlignmentType.CENTER,
-    spacing: { before: 300 }
-  });
 
   doc.addSection({
     children: [
       header1, header2, title, date, ensaioTable,
       musicosTitle, instrumentsTable,
-      ministerioTitle, ministerioTable,
-      footer
+      ministerioTitle, ministerioTable
     ]
   });
 
