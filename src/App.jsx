@@ -34,6 +34,7 @@ function App() {
   const [selected, setSelected] = useState({});
   const [organists, setOrganists] = useState(0);
   const [ministerio, setMinisterio] = useState({});
+  const [socket, setSocket] = useState(null);
 
   // Inicializar instrumentos padrão CCB
   useEffect(() => {
@@ -53,14 +54,15 @@ function App() {
 
   // Conectar ao servidor socket.io
   useEffect(() => {
-    const socket = io('http://localhost:3001');
+    const socketConnection = io('http://localhost:3001');
+    setSocket(socketConnection);
 
-    socket.on('connect', () => {
-      console.log('Socket conectado:', socket.id);
+    socketConnection.on('connect', () => {
+      console.log('Socket conectado:', socketConnection.id);
     });
 
     // Escutar dados de contabilização
-    socket.on('contabilizacao', (data) => {
+    socketConnection.on('contabilizacao', (data) => {
       console.log('Dados recebidos via socket:', data);
       setCurrentRecord(data);
       if (data.instruments) {
@@ -85,7 +87,7 @@ function App() {
     });
 
     // Escutar reset
-    socket.on('reset', () => {
+    socketConnection.on('reset', () => {
       console.log('Reset recebido via socket');
       setCurrentRecord(null);
       setSelected({});
@@ -102,12 +104,12 @@ function App() {
       setHinosNumeros('');
     });
 
-    socket.on('disconnect', () => {
+    socketConnection.on('disconnect', () => {
       console.log('Socket desconectado');
     });
 
     return () => {
-      socket.disconnect();
+      socketConnection.disconnect();
     };
   }, []);
 
@@ -136,7 +138,7 @@ function App() {
   const sendContabilizacao = async () => {
     setIsLoading(true);
     try {
-      const data = {
+      const socketData = {
         data: new Date().toISOString().split('T')[0],
         instruments: selected,
         organists: organists || 0,
@@ -153,13 +155,22 @@ function App() {
       };
 
       // Enviar via socket.io para sincronização em tempo real
-      const socket = io('http://localhost:3001');
-      socket.emit('contabilizacao', data);
+      if (socket && socket.connected) {
+        socket.emit('contabilizacao', socketData);
+      }
+
+      // Para Supabase, usar apenas campos que existem na tabela
+      const supabaseData = {
+        data: new Date().toISOString().split('T')[0],
+        instruments: selected,
+        organists: organists || 0,
+        musicians: Object.values(selected).reduce((sum, count) => sum + (count || 0), 0)
+      };
 
       if (currentRecord) {
         const { data: updated, error } = await supabase
           .from('contabilizacao')
-          .update(data)
+          .update(supabaseData)
           .eq('id', currentRecord.id)
           .select();
 
@@ -172,7 +183,7 @@ function App() {
       } else {
         const { data: inserted, error } = await supabase
           .from('contabilizacao')
-          .insert([data])
+          .insert([supabaseData])
           .select();
 
         if (error) {

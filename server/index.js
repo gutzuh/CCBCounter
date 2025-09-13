@@ -12,7 +12,12 @@ app.use(cors());
 app.use(express.json());
 
 const httpServer = createServer(app);
-const io = new Server(httpServer, { cors: { origin: '*' } });
+const io = new Server(httpServer, { 
+  cors: { 
+    origin: ['http://localhost:5173', 'http://localhost:3000', 'https://ccb-counter.vercel.app'],
+    methods: ['GET', 'POST']
+  } 
+});
 
 const db = new sqlite3.Database('./ccb.db');
 
