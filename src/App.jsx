@@ -9,6 +9,7 @@ import CCBDataPage from './components/CCBDataPage';
 import MusicosPage from './components/MusicosPage';
 import MinisterioPage from './components/MinisterioPage';
 import { generateAtaHTML, generateAtaStats, validateAtaData } from './utils/AtaGenerator';
+import { io } from 'socket.io-client';
 
 function App() {
   const location = useLocation();
@@ -50,6 +51,66 @@ function App() {
     setSelected(initialInstruments);
   }, []);
 
+  // Conectar ao servidor socket.io
+  useEffect(() => {
+    const socket = io('http://localhost:3001');
+
+    socket.on('connect', () => {
+      console.log('Socket conectado:', socket.id);
+    });
+
+    // Escutar dados de contabilização
+    socket.on('contabilizacao', (data) => {
+      console.log('Dados recebidos via socket:', data);
+      setCurrentRecord(data);
+      if (data.instruments) {
+        setSelected(typeof data.instruments === 'string' ? JSON.parse(data.instruments) : data.instruments);
+      }
+      if (data.organists !== undefined) {
+        setOrganists(data.organists);
+      }
+      if (data.ministerio) {
+        setMinisterio(typeof data.ministerio === 'string' ? JSON.parse(data.ministerio) : data.ministerio);
+      }
+      // Atualizar outros campos se existirem
+      if (data.cidade) setCidade(data.cidade);
+      if (data.estado) setEstado(data.estado);
+      if (data.local) setLocal(data.local);
+      if (data.presidencia) setPresidencia(data.presidencia);
+      if (data.palavra) setPalavra(data.palavra);
+      if (data.encarregado) setEncarregado(data.encarregado);
+      if (data.regencia) setRegencia(data.regencia);
+      if (data.hinos) setHinos(data.hinos);
+      if (data.hinosNumeros) setHinosNumeros(data.hinosNumeros);
+    });
+
+    // Escutar reset
+    socket.on('reset', () => {
+      console.log('Reset recebido via socket');
+      setCurrentRecord(null);
+      setSelected({});
+      setOrganists(0);
+      setMinisterio({});
+      setCidade('');
+      setEstado('');
+      setLocal('');
+      setPresidencia('');
+      setPalavra('');
+      setEncarregado('');
+      setRegencia('');
+      setHinos('');
+      setHinosNumeros('');
+    });
+
+    socket.on('disconnect', () => {
+      console.log('Socket desconectado');
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, []);
+
   // Auto-save com debounce
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -71,7 +132,7 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Função para enviar dados ao Supabase
+  // Função para enviar dados ao Supabase e via Socket
   const sendContabilizacao = async () => {
     setIsLoading(true);
     try {
@@ -91,14 +152,20 @@ function App() {
         hinosNumeros
       };
 
+      // Enviar via socket.io para sincronização em tempo real
+      const socket = io('http://localhost:3001');
+      socket.emit('contabilizacao', data);
+
       if (currentRecord) {
         const { data: updated, error } = await supabase
           .from('contabilizacao')
           .update(data)
           .eq('id', currentRecord.id)
           .select();
-        
-        if (!error && updated?.[0]) {
+
+        if (error) {
+          console.error('Supabase update error:', error);
+        } else if (updated?.[0]) {
           setCurrentRecord(updated[0]);
           setLastSaved(new Date());
         }
@@ -107,8 +174,10 @@ function App() {
           .from('contabilizacao')
           .insert([data])
           .select();
-        
-        if (!error && inserted?.[0]) {
+
+        if (error) {
+          console.error('Supabase insert error:', error);
+        } else if (inserted?.[0]) {
           setCurrentRecord(inserted[0]);
           setLastSaved(new Date());
         }
