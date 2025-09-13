@@ -12,11 +12,17 @@ app.use(cors());
 app.use(express.json());
 
 const httpServer = createServer(app);
-const io = new Server(httpServer, { 
-  cors: { 
-    origin: ['http://localhost:5173', 'http://localhost:3000', 'https://ccb-counter.vercel.app'],
+
+// Configurar origens permitidas via variável ALLOWED_ORIGINS (comma-separated)
+const defaultOrigins = ['http://localhost:5173', 'http://localhost:3000', 'https://ccb-counter.vercel.app'];
+const allowedOriginsEnv = process.env.ALLOWED_ORIGINS || '';
+const allowedOrigins = allowedOriginsEnv ? allowedOriginsEnv.split(',').map(s => s.trim()) : defaultOrigins;
+
+const io = new Server(httpServer, {
+  cors: {
+    origin: allowedOrigins,
     methods: ['GET', 'POST']
-  } 
+  }
 });
 
 const db = new sqlite3.Database('./ccb.db');
@@ -148,6 +154,6 @@ app.get('/api/contabilizacao/:id/docx', (req, res) => {
   });
 });
 
-httpServer.listen(3001, () => {
-  console.log('Servidor realtime (socket + DB) rodando na porta 3001');
+httpServer.listen(process.env.PORT || 3001, () => {
+  console.log(`Servidor realtime (socket + DB) rodando na porta ${process.env.PORT || 3001}`);
 });

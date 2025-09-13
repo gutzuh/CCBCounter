@@ -54,11 +54,13 @@ function App() {
 
   // Conectar ao servidor socket.io
   useEffect(() => {
-    const socketConnection = io('http://localhost:3001');
+    // URL do servidor socket - dev local ou produção
+    const socketUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001';
+    const socketConnection = io(socketUrl);
     setSocket(socketConnection);
 
     socketConnection.on('connect', () => {
-      console.log('Socket conectado:', socketConnection.id);
+      console.log('Socket conectado:', socketConnection.id, 'URL:', socketUrl);
     });
 
     // Escutar dados de contabilização
