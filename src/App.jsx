@@ -129,6 +129,19 @@ function App() {
   const [musicians, setMusicians] = useState(0);
   const [organists, setOrganists] = useState(0);
   const [selected, setSelected] = useState({});
+  
+  // Novos campos para formato CCB
+  const [cidade, setCidade] = useState('');
+  const [estado, setEstado] = useState('');
+  const [local, setLocal] = useState('');
+  const [presidencia, setPresidencia] = useState('');
+  const [palavra, setPalavra] = useState('');
+  const [encarregado, setEncarregado] = useState('');
+  const [regencia, setRegencia] = useState('');
+  const [hinos, setHinos] = useState('');
+  const [hinosNumeros, setHinosNumeros] = useState('');
+  const [ministerio, setMinisterio] = useState({});
+  
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
   const [currentFamily, setCurrentFamily] = useState('Cordas');
@@ -266,7 +279,21 @@ function App() {
     try {
       // derive musicians from instruments and organists from organ-family instruments
       const derived = deriveCountsFromSelected(selected);
-      const payload = { musicians: derived.musiciansCount, organists: derived.organCount, instruments: selected };
+      const payload = { 
+        musicians: derived.musiciansCount, 
+        organists: derived.organCount, 
+        instruments: selected,
+        cidade,
+        estado,
+        local,
+        presidencia,
+        palavra,
+        encarregado,
+        regencia,
+        hinos,
+        hinosNumeros,
+        ministerio
+      };
       // avoid emitting identical payload repeatedly
       if (lastSentPayloadRef.current && isSameState(payload, lastSentPayloadRef.current)) {
         return; // no-op
@@ -295,7 +322,23 @@ function App() {
           }
         });
 
-        const { data, error } = await supabase.from('contabilizacao').insert([{ data: new Date().toISOString(), musicians: payload.musicians, organists: payload.organists, instruments: JSON.stringify(payload.instruments), printed: 0 }]);
+        const { data, error } = await supabase.from('contabilizacao').insert([{ 
+          data: new Date().toISOString(), 
+          musicians: payload.musicians, 
+          organists: payload.organists, 
+          instruments: JSON.stringify(payload.instruments),
+          cidade: payload.cidade,
+          estado: payload.estado,
+          local: payload.local,
+          presidencia: payload.presidencia,
+          palavra: payload.palavra,
+          encarregado: payload.encarregado,
+          regencia: payload.regencia,
+          hinos: payload.hinos,
+          hinosNumeros: payload.hinosNumeros,
+          ministerio: JSON.stringify(payload.ministerio),
+          printed: 0 
+        }]);
         if (error) {
           if (!opts.silent) setError('Falha ao enviar dados: ' + error.message);
           return;
@@ -338,7 +381,7 @@ function App() {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [musicians, organists, selected]);
+  }, [musicians, organists, selected, cidade, estado, local, presidencia, palavra, encarregado, regencia, hinos, hinosNumeros, ministerio]);
 
   // heartbeat to re-broadcast current state periodically (keeps others in sync)
   useEffect(() => {
@@ -346,7 +389,7 @@ function App() {
       sendContabilizacao({ silent: true });
     }, 12000);
     return () => clearInterval(heartbeatRef.current);
-  }, [musicians, organists, selected]);
+  }, [musicians, organists, selected, cidade, estado, local, presidencia, palavra, encarregado, regencia, hinos, hinosNumeros, ministerio]);
 
   const onAdminApply = (cmd) => {
     if (cmd.type === 'force-send') {
