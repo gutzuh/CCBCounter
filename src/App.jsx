@@ -9,7 +9,6 @@ import CCBDataPage from './components/CCBDataPage';
 import MusicosPage from './components/MusicosPage';
 import MinisterioPage from './components/MinisterioPage';
 import { generateAtaHTML, generateAtaStats, validateAtaData } from './utils/AtaGenerator';
-import { io } from 'socket.io-client';
 
 function App() {
   const location = useLocation();
@@ -34,7 +33,6 @@ function App() {
   const [selected, setSelected] = useState({});
   const [organists, setOrganists] = useState(0);
   const [ministerio, setMinisterio] = useState({});
-  const [socket, setSocket] = useState(null);
 
   // Inicializar instrumentos padrão CCB
   useEffect(() => {
@@ -52,66 +50,62 @@ function App() {
     setSelected(initialInstruments);
   }, []);
 
-  // Conectar ao servidor socket.io
+  // Polling: buscar último registro do Supabase periodicamente
   useEffect(() => {
-    // URL do servidor socket - dev local ou produção
-    const socketUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001';
-    const socketConnection = io(socketUrl);
-    setSocket(socketConnection);
+    let mounted = true;
 
-    socketConnection.on('connect', () => {
-      console.log('Socket conectado:', socketConnection.id, 'URL:', socketUrl);
-    });
+    const fetchLast = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('contabilizacao')
+          .select('*')
+          .order('id', { ascending: false })
+          .limit(1);
 
-    // Escutar dados de contabilização
-    socketConnection.on('contabilizacao', (data) => {
-      console.log('Dados recebidos via socket:', data);
-      setCurrentRecord(data);
-      if (data.instruments) {
-        setSelected(typeof data.instruments === 'string' ? JSON.parse(data.instruments) : data.instruments);
+        if (error) {
+          console.error('Erro ao buscar último registro:', error);
+          return;
+        }
+
+        const row = (data && data[0]) || null;
+        if (!mounted) return;
+
+        if (row) {
+          // normalizar instruments/ministerio se necessário
+          const instruments = row.instruments && typeof row.instruments === 'string'
+            ? JSON.parse(row.instruments)
+            : row.instruments || {};
+          const ministerioVal = row.ministerio && typeof row.ministerio === 'string'
+            ? JSON.parse(row.ministerio)
+            : row.ministerio || {};
+
+          setCurrentRecord({ ...row, instruments });
+          setSelected(instruments);
+          setOrganists(row.organists || 0);
+          setMinisterio(ministerioVal);
+
+          // atualizar campos extras se existirem
+          if (row.cidade) setCidade(row.cidade);
+          if (row.estado) setEstado(row.estado);
+          if (row.local) setLocal(row.local);
+          if (row.presidencia) setPresidencia(row.presidencia);
+          if (row.palavra) setPalavra(row.palavra);
+          if (row.encarregado) setEncarregado(row.encarregado);
+          if (row.regencia) setRegencia(row.regencia);
+          if (row.hinos) setHinos(row.hinos);
+          if (row.hinosNumeros) setHinosNumeros(row.hinosNumeros);
+        }
+      } catch (err) {
+        console.error('Polling error:', err);
       }
-      if (data.organists !== undefined) {
-        setOrganists(data.organists);
-      }
-      if (data.ministerio) {
-        setMinisterio(typeof data.ministerio === 'string' ? JSON.parse(data.ministerio) : data.ministerio);
-      }
-      // Atualizar outros campos se existirem
-      if (data.cidade) setCidade(data.cidade);
-      if (data.estado) setEstado(data.estado);
-      if (data.local) setLocal(data.local);
-      if (data.presidencia) setPresidencia(data.presidencia);
-      if (data.palavra) setPalavra(data.palavra);
-      if (data.encarregado) setEncarregado(data.encarregado);
-      if (data.regencia) setRegencia(data.regencia);
-      if (data.hinos) setHinos(data.hinos);
-      if (data.hinosNumeros) setHinosNumeros(data.hinosNumeros);
-    });
+    };
 
-    // Escutar reset
-    socketConnection.on('reset', () => {
-      console.log('Reset recebido via socket');
-      setCurrentRecord(null);
-      setSelected({});
-      setOrganists(0);
-      setMinisterio({});
-      setCidade('');
-      setEstado('');
-      setLocal('');
-      setPresidencia('');
-      setPalavra('');
-      setEncarregado('');
-      setRegencia('');
-      setHinos('');
-      setHinosNumeros('');
-    });
-
-    socketConnection.on('disconnect', () => {
-      console.log('Socket desconectado');
-    });
-
+    // fetch imediado e intervalo
+    fetchLast();
+    const id = setInterval(fetchLast, 700);
     return () => {
-      socketConnection.disconnect();
+      mounted = false;
+      clearInterval(id);
     };
   }, []);
 
@@ -155,11 +149,6 @@ function App() {
         hinos,
         hinosNumeros
       };
-
-      // Enviar via socket.io para sincronização em tempo real
-      if (socket && socket.connected) {
-        socket.emit('contabilizacao', socketData);
-      }
 
       // Para Supabase, usar apenas campos que existem na tabela
       const supabaseData = {
