@@ -63,7 +63,7 @@ function App() {
           .limit(1);
 
         if (error) {
-          console.error('Erro ao buscar último registro:', error);
+          console.error('Erro ao buscar contabilizacao:', error);
           return;
         }
 
@@ -71,17 +71,32 @@ function App() {
         if (!mounted) return;
 
         if (row) {
-          // normalizar instruments/ministerio se necessário
-          const instruments = row.instruments && typeof row.instruments === 'string'
-            ? JSON.parse(row.instruments)
-            : row.instruments || {};
+          // Reconstituir instruments a partir das tabelas normalizadas
+          const contabilizacaoId = row.id;
+          const { data: instrRows, error: instrErr } = await supabase
+            .from('contabilizacao_instrumentos')
+            .select('quantidade, instrumentos(id,nome)')
+            .eq('contabilizacao_id', contabilizacaoId);
+
+          if (instrErr) {
+            console.error('Erro ao buscar instrumentos relacionados:', instrErr);
+          }
+
+          const instruments = {};
+          if (instrRows && instrRows.length) {
+            instrRows.forEach(r => {
+              const name = r.instrumentos?.nome || r.instrumento_nome || null;
+              if (name) instruments[name] = r.quantidade || 0;
+            });
+          }
+
+          setCurrentRecord({ ...row });
+          setSelected(instruments);
+          setOrganists(row.organists || 0);
+
           const ministerioVal = row.ministerio && typeof row.ministerio === 'string'
             ? JSON.parse(row.ministerio)
             : row.ministerio || {};
-
-          setCurrentRecord({ ...row, instruments });
-          setSelected(instruments);
-          setOrganists(row.organists || 0);
           setMinisterio(ministerioVal);
 
           // atualizar campos extras se existirem
@@ -203,18 +218,18 @@ function App() {
       // Para Supabase, usar apenas campos que existem na tabela
       const supabaseData = {
         data: new Date().toISOString().split('T')[0],
-        instruments: selected,
         organists: organists || 0,
         musicians: Object.values(selected).reduce((sum, count) => sum + (count || 0), 0)
       };
 
-      if (currentRecord) {
+      // Upsert contabilizacao row
+      let contabilizacaoId = currentRecord?.id || null;
+      if (contabilizacaoId) {
         const { data: updated, error } = await supabase
           .from('contabilizacao')
           .update(supabaseData)
-          .eq('id', currentRecord.id)
+          .eq('id', contabilizacaoId)
           .select();
-
         if (error) {
           console.error('Supabase update error:', error);
         } else if (updated?.[0]) {
@@ -226,12 +241,67 @@ function App() {
           .from('contabilizacao')
           .insert([supabaseData])
           .select();
-
         if (error) {
           console.error('Supabase insert error:', error);
         } else if (inserted?.[0]) {
+          contabilizacaoId = inserted[0].id;
           setCurrentRecord(inserted[0]);
           setLastSaved(new Date());
+        }
+      }
+
+      // Agora persistir instrumentos normalizados
+      if (contabilizacaoId) {
+        // 1) garantir que os instrumentos existam na tabela `instrumentos`
+        const instrumentNames = Object.keys(selected || {});
+        if (instrumentNames.length) {
+          const instrumentsPayload = instrumentNames.map(nome => ({ nome }));
+          const { error: upsertInstrErr } = await supabase
+            .from('instrumentos')
+            .upsert(instrumentsPayload, { onConflict: 'nome' });
+          if (upsertInstrErr) console.error('Erro ao upsert instrumentos:', upsertInstrErr);
+
+          // 2) buscar ids correspondentes
+          const { data: instrRows, error: instrRowsErr } = await supabase
+            .from('instrumentos')
+            .select('id,nome')
+            .in('nome', instrumentNames);
+          if (instrRowsErr) {
+            console.error('Erro ao buscar instrumentos:', instrRowsErr);
+          } else {
+            const nameToId = {};
+            instrRows.forEach(r => { nameToId[r.nome] = r.id; });
+
+            // 3) construir entradas para contabilizacao_instrumentos
+            const toUpsert = [];
+            const toDelete = [];
+            instrumentNames.forEach(name => {
+              const quantidade = Number(selected[name]) || 0;
+              const instrumento_id = nameToId[name];
+              if (!instrumento_id) return;
+              if (quantidade > 0) {
+                toUpsert.push({ contabilizacao_id: contabilizacaoId, instrumento_id, quantidade });
+              } else {
+                toDelete.push({ contabilizacao_id: contabilizacaoId, instrumento_id });
+              }
+            });
+
+            if (toUpsert.length) {
+              const { error: upsertCIError } = await supabase
+                .from('contabilizacao_instrumentos')
+                .upsert(toUpsert, { onConflict: ['contabilizacao_id', 'instrumento_id'] });
+              if (upsertCIError) console.error('Erro ao upsert contabilizacao_instrumentos:', upsertCIError);
+            }
+
+            // deletar os que zeraram
+            for (const del of toDelete) {
+              const { error: delErr } = await supabase
+                .from('contabilizacao_instrumentos')
+                .delete()
+                .match(del);
+              if (delErr) console.error('Erro ao deletar instrumento zerado:', delErr);
+            }
+          }
         }
       }
     } catch (error) {
