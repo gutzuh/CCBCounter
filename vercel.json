@@ -1,33 +1,13 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "package.json",
-      "use": "@vercel/static-build"
-    },
-    {
-      "src": "api/**/*.js",
-      "use": "@vercel/node"
-    }
-  ],
   "functions": {
-    "api/*": {
+    "server/index.js": {
       "runtime": "nodejs18.x"
     }
   },
   "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "/api/$1"
-    },
-    {
-      "handle": "filesystem"
-    },
-    {
-      "src": "(.*)",
-      "dest": "/index.html"
-    },
-    { "src": "/api/upsert", "methods": ["POST", "OPTIONS"], "dest": "/server/index.js" },
-    { "src": "/api/changes", "methods": ["POST", "OPTIONS"], "dest": "/server/index.js" }
+    { "src": "/api/(.*)", "methods": ["POST"], "dest": "server/index.js" },
+    { "handle": "filesystem" },
+    { "src": "(.*)", "dest": "/index.html" }
   ]
 }
