@@ -10,6 +10,11 @@
       "use": "@vercel/node"
     }
   ],
+  "functions": {
+    "api/*": {
+      "runtime": "nodejs18.x"
+    }
+  },
   "routes": [
     {
       "src": "/api/(.*)",
@@ -21,6 +26,8 @@
     {
       "src": "(.*)",
       "dest": "/index.html"
-    }
+    },
+    { "src": "/api/upsert", "methods": ["POST", "OPTIONS"], "dest": "/server/index.js" },
+    { "src": "/api/changes", "methods": ["POST", "OPTIONS"], "dest": "/server/index.js" }
   ]
 }
