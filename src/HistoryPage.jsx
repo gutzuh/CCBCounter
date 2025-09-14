@@ -111,6 +111,20 @@ export default function HistoryPage({ generateAtaHTML }) {
     }
   };
 
+  const getMinisterioCount = (ministerioJson) => {
+    if (!ministerioJson) return 0;
+    try {
+      const m = typeof ministerioJson === 'string' ? JSON.parse(ministerioJson) : ministerioJson;
+      return Object.values(m || {}).reduce((acc, v) => {
+        if (Array.isArray(v)) return acc + v.length;
+        if (typeof v === 'number') return acc + v;
+        return acc;
+      }, 0);
+    } catch {
+      return 0;
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -123,9 +137,35 @@ export default function HistoryPage({ generateAtaHTML }) {
     <div className="max-w-6xl mx-auto p-6">
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-gray-800 mb-2">📚 Histórico de Ensaios</h2>
-        <p className="text-gray-600">
-          Registros salvos de contabilizações anteriores. Total: {records.length} registros
-        </p>
+        <p className="text-gray-600">Registros salvos de contabilizações anteriores. Total: {records.length} registros</p>
+
+        {/* Agregação por cidade: soma de músicos + organistas + ministério */}
+        {records.length > 0 && (
+          (() => {
+            const cityTotals = records.reduce((acc, rec) => {
+              const cidade = (rec.cidade || 'Não informado').trim();
+              const mus = getTotalMusicos(rec.instruments);
+              const org = rec.organists || 0;
+              const min = getMinisterioCount(rec.ministerio);
+              const total = mus + org + min;
+              acc[cidade] = (acc[cidade] || 0) + total;
+              return acc;
+            }, {});
+
+            const entries = Object.entries(cityTotals).sort((a, b) => b[1] - a[1]);
+
+            return (
+              <div className="mt-4 grid grid-cols-2 md:grid-cols-6 gap-2">
+                {entries.map(([city, total]) => (
+                  <div key={city} className="bg-white p-2 rounded shadow text-xs text-gray-700">
+                    <div className="font-semibold">{city}</div>
+                    <div className="text-sm text-gray-500">{total} pessoas</div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()
+        )}
       </div>
 
       {records.length === 0 ? (
@@ -145,9 +185,6 @@ export default function HistoryPage({ generateAtaHTML }) {
                     <h3 className="text-lg font-semibold text-gray-800">
                       {record.cidade || 'Cidade não informada'} - {record.local || 'Local não informado'}
                     </h3>
-                    <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs">
-                      {record.estado || 'UF'}
-                    </span>
                   </div>
                   <p className="text-sm text-gray-600">
                     Data: {new Date(record.data || record.created_at).toLocaleDateString('pt-BR')}

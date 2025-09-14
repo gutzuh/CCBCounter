@@ -2,18 +2,14 @@ import React, { useState } from 'react';
 
 function MinisterioPage({ ministerio, setMinisterio }) {
   const [novoCargo, setNovoCargo] = useState('');
-  const [novoNome, setNovoNome] = useState('');
-  const [cargoSelecionado, setCargoSelecionado] = useState('');
 
   // Cargos padrão CCB
   const cargosPadrao = [
     'Anciões',
     'Diáconos', 
     'Cooperadores',
-    'Auxiliares de Trabalhos Diversos',
-    'Irmãs Consagradas ao Senhor',
-    'Irmãs Cooperadoras',
-    'Irmãs Auxiliares de Trabalhos Diversos'
+    'Cooperadores de Jovens',
+    'Encarregados de Orquestra',
   ];
 
   const adicionarCargo = () => {
@@ -22,7 +18,7 @@ function MinisterioPage({ ministerio, setMinisterio }) {
     const cargoFormatado = novoCargo.trim();
     setMinisterio(prev => ({
       ...prev,
-      [cargoFormatado]: prev[cargoFormatado] || []
+      [cargoFormatado]: prev[cargoFormatado] || 0
     }));
     setNovoCargo('');
   };
@@ -35,31 +31,14 @@ function MinisterioPage({ ministerio, setMinisterio }) {
     });
   };
 
-  const adicionarNome = () => {
-    if (!cargoSelecionado || !novoNome.trim()) return;
-    
-    setMinisterio(prev => ({
-      ...prev,
-      [cargoSelecionado]: [...(prev[cargoSelecionado] || []), novoNome.trim()]
-    }));
-    setNovoNome('');
-  };
-
-  const removerNome = (cargo, index) => {
-    setMinisterio(prev => ({
-      ...prev,
-      [cargo]: prev[cargo].filter((_, i) => i !== index)
-    }));
-  };
-
   const adicionarCargoPadrao = (cargo) => {
     setMinisterio(prev => ({
       ...prev,
-      [cargo]: prev[cargo] || []
+      [cargo]: prev[cargo] || 0
     }));
   };
 
-  const totalPessoas = Object.values(ministerio).reduce((total, nomes) => total + (nomes?.length || 0), 0);
+  const totalPessoas = Object.values(ministerio).reduce((total, v) => total + (Number(v) || 0), 0);
   const totalCargos = Object.keys(ministerio).length;
 
   return (
@@ -166,56 +145,45 @@ function MinisterioPage({ ministerio, setMinisterio }) {
           </div>
         </div>
 
-        {/* Adicionar Nomes aos Cargos */}
+        {/* Interface para editar contagens numéricas por cargo */}
         {Object.keys(ministerio).length > 0 && (
           <div className="bg-gradient-to-br from-green-50 to-emerald-50 border-2 border-green-300 rounded-xl sm:rounded-2xl overflow-hidden mb-6 sm:mb-8">
             <div className="bg-gradient-to-r from-green-500 to-emerald-500 p-3 sm:p-4 text-white">
               <div className="flex items-center gap-3">
                 <span className="text-xl sm:text-2xl">👥</span>
-                <h3 className="text-lg sm:text-xl font-bold">Adicionar Pessoas aos Cargos</h3>
+                <h3 className="text-lg sm:text-xl font-bold">Editar Contagens do Ministério</h3>
               </div>
             </div>
-            
+
             <div className="p-4 sm:p-6">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Selecionar Cargo:
-                  </label>
-                  <select
-                    value={cargoSelecionado}
-                    onChange={(e) => setCargoSelecionado(e.target.value)}
-                    className="w-full p-3 sm:p-4 border-2 border-green-300 rounded-lg sm:rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 text-base sm:text-lg"
-                  >
-                    <option value="">Escolha um cargo...</option>
-                    {Object.keys(ministerio).map(cargo => (
-                      <option key={cargo} value={cargo}>{cargo}</option>
-                    ))}
-                  </select>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Nome da Pessoa:
-                  </label>
-                  <div className="flex flex-col sm:flex-row gap-3">
-                    <input
-                      type="text"
-                      value={novoNome}
-                      onChange={(e) => setNovoNome(e.target.value)}
-                      placeholder="Digite o nome..."
-                      className="flex-1 p-3 sm:p-4 border-2 border-green-300 rounded-lg sm:rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 text-base sm:text-lg"
-                      onKeyPress={(e) => e.key === 'Enter' && adicionarNome()}
-                    />
-                    <button
-                      onClick={adicionarNome}
-                      disabled={!cargoSelecionado || !novoNome.trim()}
-                      className="px-4 sm:px-6 py-3 sm:py-4 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-lg sm:rounded-xl hover:from-green-600 hover:to-emerald-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed font-semibold shadow-lg hover:shadow-xl active:scale-95"
-                    >
-                      Adicionar
-                    </button>
+                {Object.keys(ministerio).map(cargo => (
+                  <div key={cargo} className="flex items-center gap-3">
+                    <div className="flex-1">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">{cargo}</label>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setMinisterio(prev => ({ ...prev, [cargo]: Math.max(0, (Number(prev[cargo]) || 0) - 1) }))}
+                          className="px-2 py-1 bg-gray-200 rounded"
+                          title="Diminuir"
+                        >-</button>
+                        <input
+                          type="number"
+                          min="0"
+                          value={Number(ministerio[cargo] || 0)}
+                          onChange={(e) => setMinisterio(prev => ({ ...prev, [cargo]: Number(e.target.value) || 0 }))}
+                          className="w-24 p-2 border rounded text-center"
+                        />
+                        <button
+                          onClick={() => setMinisterio(prev => ({ ...prev, [cargo]: (Number(prev[cargo]) || 0) + 1 }))}
+                          className="px-2 py-1 bg-gray-200 rounded"
+                          title="Aumentar"
+                        >+</button>
+                      </div>
+                    </div>
+                    <div className="w-28 text-right text-sm text-gray-600">{Number(ministerio[cargo] || 0)} pessoas</div>
                   </div>
-                </div>
+                ))}
               </div>
             </div>
           </div>
@@ -234,12 +202,12 @@ function MinisterioPage({ ministerio, setMinisterio }) {
                   }`}>
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div className="flex items-center gap-3 min-w-0 flex-1">
-                        <span className="text-xl sm:text-2xl flex-shrink-0">{isPadrao ? '⛪' : '👤'}</span>
-                        <h4 className="text-lg sm:text-xl font-bold truncate">{cargo}</h4>
-                        <span className="bg-white bg-opacity-20 px-2 sm:px-3 py-1 rounded-full text-xs sm:text-sm flex-shrink-0">
-                          {nomes.length} {nomes.length === 1 ? 'pessoa' : 'pessoas'}
-                        </span>
-                      </div>
+                          <span className="text-xl sm:text-2xl flex-shrink-0">{isPadrao ? '⛪' : '👤'}</span>
+                          <h4 className="text-lg sm:text-xl font-bold truncate">{cargo}</h4>
+                          <span className="bg-white bg-opacity-20 px-2 sm:px-3 py-1 rounded-full text-xs sm:text-sm flex-shrink-0">
+                            {Number(nomes || 0)} {Number(nomes || 0) === 1 ? 'pessoa' : 'pessoas'}
+                          </span>
+                        </div>
                       
                       <button
                         onClick={() => removerCargo(cargo)}
@@ -252,26 +220,9 @@ function MinisterioPage({ ministerio, setMinisterio }) {
                   </div>
                   
                   <div className="p-4 sm:p-6">
-                    {nomes.length === 0 ? (
-                      <p className="text-gray-500 italic text-center py-6 sm:py-8 text-sm sm:text-base">
-                        Nenhuma pessoa adicionada a este cargo
-                      </p>
-                    ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {nomes.map((nome, index) => (
-                          <div key={index} className="bg-gradient-to-br from-gray-50 to-gray-100 p-3 sm:p-4 rounded-lg sm:rounded-xl border border-gray-200 flex items-center justify-between hover:shadow-md transition-all duration-200">
-                            <span className="font-medium text-gray-800 text-sm sm:text-base truncate mr-2">{nome}</span>
-                            <button
-                              onClick={() => removerNome(cargo, index)}
-                              className="text-red-500 hover:text-red-700 hover:bg-red-100 p-1 rounded transition-colors flex-shrink-0"
-                              title="Remover pessoa"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    <p className="text-gray-500 italic text-center py-6 sm:py-8 text-sm sm:text-base">
+                      {Number(nomes || 0)} {Number(nomes || 0) === 1 ? 'pessoa' : 'pessoas'} neste cargo
+                    </p>
                   </div>
                 </div>
               );

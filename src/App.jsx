@@ -127,7 +127,7 @@ function App() {
   // Supabase Realtime: inscrever em INSERTs na tabela e disparar fetchLast
   useEffect(() => {
     const channel = supabase.channel('public:contabilizacao')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'contabilizacao' }, (payload) => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'contabilizacao' }, (payload) => {
         // Quando houver um novo insert, buscar o último registro imediatamente
         try {
           // chamar a query diretamente
@@ -167,6 +167,40 @@ function App() {
           console.error('Erro no handler realtime:', e);
         }
       })
+      // também inscrever em mudanças da tabela de relacionamentos para atualizar instrumentos
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'contabilizacao_instrumentos' }, (payload) => {
+        try {
+          // Quando houver mudança em contabilizacao_instrumentos, refetch do último registro
+          (async () => {
+            const { data, error } = await supabase
+              .from('contabilizacao')
+              .select('*')
+              .order('id', { ascending: false })
+              .limit(1);
+            if (error) return console.error('Erro ao buscar após change em instrumentos:', error);
+            const row = (data && data[0]) || null;
+            if (row) {
+              const contabilizacaoId = row.id;
+              const { data: instrRows, error: instrErr } = await supabase
+                .from('contabilizacao_instrumentos')
+                .select('quantidade, instrumentos(id,nome)')
+                .eq('contabilizacao_id', contabilizacaoId);
+              if (instrErr) console.error('Erro ao buscar instrumentos relacionados:', instrErr);
+
+              const instruments = {};
+              if (instrRows && instrRows.length) {
+                instrRows.forEach(r => {
+                  const name = r.instrumentos?.nome || r.instrumento_nome || null;
+                  if (name) instruments[name] = r.quantidade || 0;
+                });
+              }
+              setSelected(instruments);
+            }
+          })();
+        } catch (e) {
+          console.error('Erro no handler realtime instrumentos:', e);
+        }
+      })
       .subscribe();
 
     return () => {
@@ -182,7 +216,7 @@ function App() {
 
     return () => clearTimeout(timer);
   }, [
-    cidade, estado, local, presidencia, palavra, encarregado, regencia, 
+    cidade, local, presidencia, palavra, encarregado, regencia, 
     hinos, hinosNumeros, selected, organists, ministerio
   ]);
 
@@ -199,110 +233,69 @@ function App() {
   const sendContabilizacao = async () => {
     setIsLoading(true);
     try {
-      const socketData = {
-        data: new Date().toISOString().split('T')[0],
-        instruments: selected,
+      // Usar RPC atômica se disponível: p_cont + p_instruments
+      const p_cont = {
+        data: new Date().toISOString(),
+        musicians: Object.values(selected).reduce((sum, count) => sum + (count || 0), 0),
         organists: organists || 0,
-        ministerio: ministerio,
-        cidade,
-        estado,
-        local,
-        presidencia,
-        palavra,
-        encarregado,
-        regencia,
-        hinos,
-        hinosNumeros
+        cidade: cidade,
+        local: local,
+        presidencia: presidencia,
+        palavra: palavra,
+        encarregado: encarregado,
+        regencia: regencia,
+        hinos: hinos,
+        hinosNumeros: hinosNumeros,
+        ministerio: ministerio
       };
 
-      // Para Supabase, usar apenas campos que existem na tabela
-      const supabaseData = {
-        data: new Date().toISOString().split('T')[0],
-        organists: organists || 0,
-        musicians: Object.values(selected).reduce((sum, count) => sum + (count || 0), 0)
-      };
+      const p_instruments = selected;
 
-      // Upsert contabilizacao row
-      let contabilizacaoId = currentRecord?.id || null;
-      if (contabilizacaoId) {
-        const { data: updated, error } = await supabase
-          .from('contabilizacao')
-          .update(supabaseData)
-          .eq('id', contabilizacaoId)
-          .select();
-        if (error) {
-          console.error('Supabase update error:', error);
-        } else if (updated?.[0]) {
-          setCurrentRecord(updated[0]);
-          setLastSaved(new Date());
+      // Retry simples com backoff exponencial (até 3 tentativas)
+      let attempts = 0;
+      let rpcResult = null;
+      while (attempts < 3) {
+        attempts += 1;
+        const { data: rpcData, error: rpcErr } = await supabase.rpc('upsert_contabilizacao_full', { p_cont: p_cont, p_instruments: p_instruments });
+        if (!rpcErr) {
+          rpcResult = rpcData;
+          break;
         }
-      } else {
-        const { data: inserted, error } = await supabase
-          .from('contabilizacao')
-          .insert([supabaseData])
-          .select();
-        if (error) {
-          console.error('Supabase insert error:', error);
-        } else if (inserted?.[0]) {
-          contabilizacaoId = inserted[0].id;
-          setCurrentRecord(inserted[0]);
-          setLastSaved(new Date());
-        }
+        console.error('RPC erro (tentativa', attempts, '):', rpcErr);
+        // pequeno backoff
+        await new Promise(res => setTimeout(res, 300 * Math.pow(2, attempts - 1)));
       }
 
-      // Agora persistir instrumentos normalizados
-      if (contabilizacaoId) {
-        // 1) garantir que os instrumentos existam na tabela `instrumentos`
-        const instrumentNames = Object.keys(selected || {});
-        if (instrumentNames.length) {
-          const instrumentsPayload = instrumentNames.map(nome => ({ nome }));
-          const { error: upsertInstrErr } = await supabase
-            .from('instrumentos')
-            .upsert(instrumentsPayload, { onConflict: 'nome' });
-          if (upsertInstrErr) console.error('Erro ao upsert instrumentos:', upsertInstrErr);
+      if (rpcResult && rpcResult.length) {
+        const newId = rpcResult[0].contabilizacao_id || rpcResult[0].id || rpcResult[0];
+        if (newId) {
+          // buscar registro completo e instrumentos para atualizar UI
+          const { data: rowData, error: rowErr } = await supabase
+            .from('contabilizacao')
+            .select('*')
+            .eq('id', newId)
+            .limit(1);
+          if (!rowErr && rowData && rowData[0]) {
+            const row = rowData[0];
+            setCurrentRecord(row);
+            setLastSaved(new Date());
 
-          // 2) buscar ids correspondentes
-          const { data: instrRows, error: instrRowsErr } = await supabase
-            .from('instrumentos')
-            .select('id,nome')
-            .in('nome', instrumentNames);
-          if (instrRowsErr) {
-            console.error('Erro ao buscar instrumentos:', instrRowsErr);
-          } else {
-            const nameToId = {};
-            instrRows.forEach(r => { nameToId[r.nome] = r.id; });
-
-            // 3) construir entradas para contabilizacao_instrumentos
-            const toUpsert = [];
-            const toDelete = [];
-            instrumentNames.forEach(name => {
-              const quantidade = Number(selected[name]) || 0;
-              const instrumento_id = nameToId[name];
-              if (!instrumento_id) return;
-              if (quantidade > 0) {
-                toUpsert.push({ contabilizacao_id: contabilizacaoId, instrumento_id, quantidade });
-              } else {
-                toDelete.push({ contabilizacao_id: contabilizacaoId, instrumento_id });
-              }
-            });
-
-            if (toUpsert.length) {
-              const { error: upsertCIError } = await supabase
-                .from('contabilizacao_instrumentos')
-                .upsert(toUpsert, { onConflict: ['contabilizacao_id', 'instrumento_id'] });
-              if (upsertCIError) console.error('Erro ao upsert contabilizacao_instrumentos:', upsertCIError);
+            const { data: instrRows, error: instrErr } = await supabase
+              .from('contabilizacao_instrumentos')
+              .select('quantidade, instrumentos(id,nome)')
+              .eq('contabilizacao_id', newId);
+            const instruments = {};
+            if (!instrErr && instrRows && instrRows.length) {
+              instrRows.forEach(r => {
+                const name = r.instrumentos?.nome || r.instrumento_nome || null;
+                if (name) instruments[name] = r.quantidade || 0;
+              });
             }
-
-            // deletar os que zeraram
-            for (const del of toDelete) {
-              const { error: delErr } = await supabase
-                .from('contabilizacao_instrumentos')
-                .delete()
-                .match(del);
-              if (delErr) console.error('Erro ao deletar instrumento zerado:', delErr);
-            }
+            setSelected(instruments);
           }
         }
+      } else {
+        console.error('Falha ao persistir via RPC após tentativas');
       }
     } catch (error) {
       console.error('Erro ao salvar:', error);

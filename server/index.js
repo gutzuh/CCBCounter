@@ -6,6 +6,7 @@ import { Server } from 'socket.io';
 import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell } from 'docx';
 import { Buffer } from 'buffer';
 import { buildDocxBufferFromRow } from '../api/docx.js';
+import { createClient } from '@supabase/supabase-js';
 
 const app = express();
 app.use(cors());
@@ -152,6 +153,26 @@ app.get('/api/contabilizacao/:id/docx', (req, res) => {
       res.status(500).json({ error: 'Erro ao gerar DOCX' });
     }
   });
+});
+
+// RPC upsert endpoint using Supabase service role (secure backend call)
+app.post('/api/upsert', async (req, res) => {
+  const serviceKey = process.env.SERVICE_ROLE_KEY;
+  const supabaseUrl = process.env.SUPABASE_URL;
+  if (!serviceKey || !supabaseUrl) return res.status(500).json({ error: 'SERVICE_ROLE_KEY or SUPABASE_URL not configured on server' });
+
+  const supabase = createClient(supabaseUrl, serviceKey);
+  const { p_cont, p_instruments } = req.body || {};
+  if (!p_cont) return res.status(400).json({ error: 'p_cont required' });
+
+  try {
+    const { data, error } = await supabase.rpc('upsert_contabilizacao_full', { p_cont, p_instruments });
+    if (error) return res.status(500).json({ error });
+    return res.json({ id: data });
+  } catch (e) {
+    console.error('RPC upsert error', e);
+    return res.status(500).json({ error: e.message });
+  }
 });
 
 httpServer.listen(process.env.PORT || 3001, () => {

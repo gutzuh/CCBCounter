@@ -50,7 +50,7 @@ export function generateAtaHTML(data) {
         ENSAIO REGIONAL - ${cidade.toUpperCase()} - ${local.toUpperCase()}
       </h2>
       <p style="text-align:center; font-size:14px; margin-bottom:30px; line-height: 1.2;">
-        Realizado em: ${dateStr} - ${cidade}/${estado}
+        Realizado em: ${dateStr} - ${cidade}
       </p>
 
       <!-- Tabela de Informações do Ensaio -->
@@ -182,22 +182,15 @@ function buildMinisterioTable(ministerio) {
 
   let rows = '';
   
+  // Cada entrada de ministrio pode ser um número ou um array de nomes.
+  // Aqui mostramos apenas a quantidade por cargo (sem listar nomes), conforme solicitado.
   ministerioEntries.forEach(([cargo, nomes]) => {
-    if (Array.isArray(nomes) && nomes.length > 0) {
+    const quantidade = Array.isArray(nomes) ? nomes.length : (typeof nomes === 'number' ? nomes : 0);
+    if (quantidade > 0) {
       rows += `
         <tr>
-          <td style="font-weight:bold; padding:8px; border:1px solid #333; width:30%; background-color:#f8f9fa;">${cargo}</td>
-          <td style="text-align:center; padding:8px; border:1px solid #333; width:15%;">${nomes.length}</td>
-          <td style="padding:8px; border:1px solid #333; width:55%;">${nomes.join(', ')}</td>
-        </tr>
-      `;
-    } else if (typeof nomes === 'number' && nomes > 0) {
-      // Fallback para formato antigo (apenas números)
-      rows += `
-        <tr>
-          <td style="font-weight:bold; padding:8px; border:1px solid #333; width:30%; background-color:#f8f9fa;">${cargo}</td>
-          <td style="text-align:center; padding:8px; border:1px solid #333; width:15%;">${nomes}</td>
-          <td style="padding:8px; border:1px solid #333; width:55%;">—</td>
+          <td style="font-weight:bold; padding:8px; border:1px solid #333; width:40%; background-color:#f8f9fa;">${cargo}</td>
+          <td style="text-align:center; padding:8px; border:1px solid #333; width:20%;">${quantidade}</td>
         </tr>
       `;
     }
@@ -211,9 +204,8 @@ function buildMinisterioTable(ministerio) {
     <table style="width:100%; border-collapse: collapse; margin-bottom:30px; border:1px solid #333;">
       <thead>
         <tr style="background-color:#f8f9fa;">
-          <th style="text-align:left; border:1px solid #333; padding:8px; font-weight:bold; width:30%;">Cargo</th>
-          <th style="text-align:center; border:1px solid #333; padding:8px; font-weight:bold; width:15%;">Qtd</th>
-          <th style="text-align:left; border:1px solid #333; padding:8px; font-weight:bold; width:55%;">Nomes</th>
+          <th style="text-align:left; border:1px solid #333; padding:8px; font-weight:bold; width:40%;">Cargo</th>
+          <th style="text-align:center; border:1px solid #333; padding:8px; font-weight:bold; width:20%;">Qtd</th>
         </tr>
       </thead>
       <tbody>
@@ -255,9 +247,7 @@ export function validateAtaData(data) {
     errors.push('Cidade é obrigatória');
   }
   
-  if (!data.estado || data.estado.trim() === '') {
-    errors.push('Estado é obrigatório');
-  }
+  // Estado não é obrigatório quando a contagem é limitada ao Brasil por cidade
 
   if (!data.local || data.local.trim() === '') {
     errors.push('Local do ensaio é obrigatório');
