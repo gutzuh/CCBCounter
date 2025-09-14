@@ -218,4 +218,29 @@ function CCBDataPage({
   );
 }
 
+// Função que realiza o upsert via API
+async function upsertContabilizacao(selectedDate, totalCount) {
+  try {
+    const response = await fetch('/api/upsert', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-upsert-token': process.env.UPDATER_AUTH_TOKEN,
+      },
+      body: JSON.stringify({
+        p_data: selectedDate,
+        p_total: totalCount
+        // p_printed removido
+      }),
+    });
+    if (!response.ok) {
+      throw new Error('Erro no upsert');
+    }
+    return await response.json();
+  } catch (err) {
+    console.error('Erro ao persistir via endpoint:', err);
+    throw err;
+  }
+}
+
 export default CCBDataPage;

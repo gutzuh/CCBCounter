@@ -11,40 +11,23 @@ declare
   k text;
   quantidade_text text;
   v_instr_id integer;
-  v_printed integer;
 begin
   -- Procurar por um registro existente pela coluna `data` (se houver)
   select id into v_id from contabilizacao where data = (p_cont->> 'data')::timestamptz limit 1;
-
-  -- Normalizar valor de `printed` para inteiro (compatível com DB que usa integer)
-  v_printed := null;
-  if p_cont ? 'printed' then
-    if (p_cont->> 'printed') ~ '^\d+$' then
-      v_printed := (p_cont->> 'printed')::int;
-    elsif lower(p_cont->> 'printed') in ('true','t','yes') then
-      v_printed := 1;
-    else
-      v_printed := 0;
-    end if;
-  end if;
 
   if v_id is not null then
     -- Atualizar campos existentes (usar apenas colunas que existem na migration)
     update contabilizacao set
       musicians = COALESCE((p_cont->> 'musicians')::int, musicians),
-      organists = COALESCE((p_cont->> 'organists')::int, organists),
-      printed = COALESCE(v_printed, printed),
-      admin = COALESCE((p_cont->> 'admin')::boolean, admin)
+      organists = COALESCE((p_cont->> 'organists')::int, organists)
     where id = v_id;
   else
     -- Inserir novo registro com as colunas existentes
-    insert into contabilizacao(data, musicians, organists, printed, admin)
+    insert into contabilizacao(data, musicians, organists)
     values (
       (p_cont->> 'data')::timestamptz,
       COALESCE((p_cont->> 'musicians')::int, 0),
-      COALESCE((p_cont->> 'organists')::int, 0),
-      COALESCE(v_printed, 0),
-      COALESCE((p_cont->> 'admin')::boolean, false)
+      COALESCE((p_cont->> 'organists')::int, 0)
     ) returning id into v_id;
   end if;
 
