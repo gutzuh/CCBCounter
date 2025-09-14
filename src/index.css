@@ -1,7 +1,12 @@
-/* Removendo Tailwind via PostCSS e adicionando estilos básicos */
-body {
-  font-family: Arial, sans-serif;
+/* Reset básico */
+* {
   margin: 0;
   padding: 0;
-  background-color: #f9f9f9;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  line-height: 1.5;
+  color: #333;
 }
