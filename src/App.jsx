@@ -232,6 +232,8 @@ function App() {
   // Função para enviar dados ao Supabase e via Socket
   const sendContabilizacao = async () => {
     setIsLoading(true);
+    // simples circuit-breaker para evitar flood de chamadas ao servidor remoto
+    if (!sendContabilizacao.lastServerFailure) sendContabilizacao.lastServerFailure = 0;
     try {
       // Usar RPC atômica se disponível: p_cont + p_instruments
       const p_cont = {
@@ -251,23 +253,82 @@ function App() {
 
       const p_instruments = selected;
 
-      // Retry simples com backoff exponencial (até 3 tentativas)
-      let attempts = 0;
-      let rpcResult = null;
-      while (attempts < 3) {
-        attempts += 1;
-        const { data: rpcData, error: rpcErr } = await supabase.rpc('upsert_contabilizacao_full', { p_cont: p_cont, p_instruments: p_instruments });
-        if (!rpcErr) {
-          rpcResult = rpcData;
-          break;
+      // Primeiro: tentar o endpoint backend seguro `/api/upsert` (tem SERVICE_ROLE_KEY)
+      let newId = null;
+      try {
+        // se falha recente do servidor (<5s), pule tentativa ao servidor
+        const now = Date.now();
+        if (now - (sendContabilizacao.lastServerFailure || 0) < 5000) {
+          console.warn('Pulando tentativa ao endpoint remoto devido a falha recente');
+        } else {
+        const maxServerAttempts = 2;
+        const endpoint = import.meta.env.VITE_UPSERT_ENDPOINT || '/api/upsert';
+        const token = import.meta.env.VITE_UPSERT_TOKEN || null;
+        for (let a = 1; a <= maxServerAttempts; a++) {
+          try {
+            const headers = { 'Content-Type': 'application/json' };
+            if (token) headers['x-upsert-token'] = token;
+            const resp = await fetch(endpoint, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({ p_cont, p_instruments })
+            });
+
+            if (resp.ok) {
+              const json = await resp.json();
+              newId = json?.id || json?.data || null;
+              break;
+            } else {
+              const text = await resp.text();
+              console.error('Server upsert erro (status=' + resp.status + '):', text);
+              // registrar falha para circuit breaker
+              sendContabilizacao.lastServerFailure = Date.now();
+            }
+          } catch (e) {
+            console.error('Falha na chamada upsert (tentativa', a, '):', e?.message || e);
+            sendContabilizacao.lastServerFailure = Date.now();
+          }
+          // backoff entre tentativas ao chamar o servidor
+          await new Promise(res => setTimeout(res, 300 * Math.pow(2, a - 1)));
         }
-        console.error('RPC erro (tentativa', attempts, '):', rpcErr);
-        // pequeno backoff
-        await new Promise(res => setTimeout(res, 300 * Math.pow(2, attempts - 1)));
+        }
+      } catch (e) {
+        console.error('Erro inesperado ao tentar endpoint upsert:', e);
       }
 
-      if (rpcResult && rpcResult.length) {
-        const newId = rpcResult[0].contabilizacao_id || rpcResult[0].id || rpcResult[0];
+      // Se não obteve id via servidor, usar RPC directo ao Supabase com retries (fallback)
+      if (!newId) {
+        let attempts = 0;
+        let rpcResult = null;
+        while (attempts < 3) {
+          attempts += 1;
+          const { data: rpcData, error: rpcErr } = await supabase.rpc('upsert_contabilizacao_full', { p_cont: p_cont, p_instruments: p_instruments });
+          if (!rpcErr) {
+            rpcResult = rpcData;
+            break;
+          }
+          // tentar extrair detalhes do erro (supabase error shape)
+          try {
+            const details = {
+              code: rpcErr?.code,
+              message: rpcErr?.message || rpcErr?.msg || rpcErr?.error || JSON.stringify(rpcErr),
+              hint: rpcErr?.hint || null
+            };
+            console.error('RPC erro (tentativa', attempts, '):', details);
+          } catch (e) {
+            console.error('RPC erro (tentativa', attempts, '):', rpcErr);
+          }
+
+          // pequeno backoff
+          await new Promise(res => setTimeout(res, 300 * Math.pow(2, attempts - 1)));
+        }
+
+        if (rpcResult && rpcResult.length) {
+          newId = rpcResult[0].contabilizacao_id || rpcResult[0].id || rpcResult[0];
+        }
+      }
+
+      if (newId) {
         if (newId) {
           // buscar registro completo e instrumentos para atualizar UI
           const { data: rowData, error: rowErr } = await supabase
@@ -295,7 +356,7 @@ function App() {
           }
         }
       } else {
-        console.error('Falha ao persistir via RPC após tentativas');
+        console.error('Falha ao persistir via RPC/endpoint após tentativas');
       }
     } catch (error) {
       console.error('Erro ao salvar:', error);
