@@ -342,7 +342,7 @@ function App() {
               sendContabilizacao.lastServerFailure = Date.now();
             }
           } catch (e) {
-            console.error('Falha na chamada upsert (tentativa', a, '):', e?.message || e);
+            console.error('Falha na chamada upsert (tentativa', a, ' ):', e?.message || e);
             sendContabilizacao.lastServerFailure = Date.now();
           }
           // backoff entre tentativas ao chamar o servidor
@@ -666,6 +666,29 @@ function App() {
       >
         🔄
       </button>
+
+      {/* Formulário simples para upsert via RPC */}
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+        <form onSubmit={handleSubmit} className="bg-white p-6 rounded shadow-md space-y-4 w-full max-w-xs">
+          <h2 className="text-lg font-semibold">Upsert CCB</h2>
+          <input
+            type="date"
+            value={data}
+            onChange={(e) => setData(e.target.value)}
+            className="w-full border-gray-300 border rounded p-2"
+            required
+          />
+          <input
+            type="number"
+            value={total}
+            onChange={(e) => setTotal(Number(e.target.value))}
+            className="w-full border-gray-300 border rounded p-2"
+            required
+          />
+          <button type="submit" className="w-full bg-blue-500 text-white p-2 rounded">Enviar</button>
+          {feedback && <p className="text-center text-sm text-gray-700 mt-2">{feedback}</p>}
+        </form>
+      </div>
     </div>
   );
 }
