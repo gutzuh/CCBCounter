@@ -33,6 +33,7 @@ function App() {
   const [selected, setSelected] = useState({});
   const [organists, setOrganists] = useState(0);
   const [ministerio, setMinisterio] = useState({});
+  const [lastSyncedState, setLastSyncedState] = useState(null);
 
   // Inicializar instrumentos padrão CCB
   useEffect(() => {
@@ -92,6 +93,7 @@ function App() {
 
           setCurrentRecord({ ...row });
           setSelected(instruments);
+          if (!lastSyncedState) setLastSyncedState(instruments);
           setOrganists(row.organists || 0);
 
           const ministerioVal = row.ministerio && typeof row.ministerio === 'string'
@@ -228,6 +230,61 @@ function App() {
 
     return () => clearInterval(interval);
   }, []);
+
+  // calcula diffs entre estado anterior e atual dos instrumentos
+  const computeDiffs = (prev = {}, cur = {}) => {
+    const diffs = [];
+    const allKeys = new Set([...Object.keys(prev || {}), ...Object.keys(cur || {})]);
+    allKeys.forEach(k => {
+      const pv = Number(prev[k] || 0);
+      const cv = Number(cur[k] || 0);
+      if (cv > pv) {
+        diffs.push({ field: `adicionou ${k}`, old_value: pv, new_value: cv, changed_by: null });
+      } else if (cv < pv) {
+        diffs.push({ field: `removeu ${k}`, old_value: pv, new_value: cv, changed_by: null });
+      }
+    });
+    return diffs;
+  };
+
+  // Envia apenas mudanças para /api/changes
+  const performMinimalSync = async () => {
+    try {
+      const prev = lastSyncedState || {};
+      const cur = selected || {};
+      const diffs = computeDiffs(prev, cur);
+      if (!diffs || diffs.length === 0) return;
+
+      const endpoint = import.meta.env.VITE_UPSERT_ENDPOINT || '/api/changes';
+      const token = import.meta.env.VITE_UPSERT_TOKEN || null;
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers['x-upsert-token'] = token;
+
+      const resp = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ changes: diffs })
+      });
+      if (!resp.ok) {
+        const text = await resp.text();
+        console.error('Erro ao enviar changes:', resp.status, text);
+        return;
+      }
+      // atualizar lastSyncedState para a versão atual
+      setLastSyncedState({ ...cur });
+      console.log('Minimal sync sent:', diffs.length, 'changes');
+    } catch (e) {
+      console.error('Erro em performMinimalSync:', e);
+    }
+  };
+
+  // Periodic minimal-sync: a cada 10s, enviar apenas as mudanças (adicionados/removidos)
+  useEffect(() => {
+    const id = setInterval(() => {
+      performMinimalSync();
+    }, 10000);
+    return () => clearInterval(id);
+  }, [selected, lastSyncedState]);
 
   // Função para enviar dados ao Supabase e via Socket
   const sendContabilizacao = async () => {
@@ -465,6 +522,12 @@ function App() {
                 </div>
               </div>
             </div>
+            {/* Header sync button (desktop) */}
+            <div className="hidden lg:flex items-center ml-4">
+              <button onClick={performMinimalSync} title="Sincronizar agora" className="bg-white bg-opacity-10 hover:bg-opacity-20 px-3 py-2 rounded-md text-white">
+                🔄
+              </button>
+            </div>
           </div>
         </div>
       </header>
@@ -595,6 +658,14 @@ function App() {
           </div>
         </div>
       )}
+      {/* Floating sync button for mobile */}
+      <button
+        onClick={performMinimalSync}
+        className="lg:hidden fixed bottom-6 right-6 bg-blue-700 text-white p-4 rounded-full shadow-lg z-50"
+        title="Sincronizar agora"
+      >
+        🔄
+      </button>
     </div>
   );
 }

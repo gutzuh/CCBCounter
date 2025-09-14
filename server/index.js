@@ -189,6 +189,59 @@ app.post('/api/upsert', async (req, res) => {
   }
 });
 
+// Endpoint to record granular changes into contabilizacao_changes
+app.post('/api/changes', async (req, res) => {
+  const serviceKey = process.env.SERVICE_ROLE_KEY;
+  const supabaseUrl = process.env.SUPABASE_URL;
+  if (!serviceKey || !supabaseUrl) return res.status(500).json({ error: 'SERVICE_ROLE_KEY or SUPABASE_URL not configured on server' });
+
+  const expectedToken = process.env.UPDATER_AUTH_TOKEN;
+  if (expectedToken) {
+    const provided = req.headers['x-upsert-token'] || req.headers['x-updater-token'] || req.headers['authorization'];
+    if (!provided || String(provided) !== expectedToken) {
+      console.warn('Rejected /api/changes call due to missing/invalid token from', req.ip);
+      return res.status(401).json({ error: 'unauthorized' });
+    }
+  }
+
+  const supabase = createClient(supabaseUrl, serviceKey);
+  const { changes } = req.body || {};
+  if (!changes || !Array.isArray(changes) || changes.length === 0) return res.status(400).json({ error: 'changes array required' });
+
+  try {
+    // get latest contabilizacao id if exists
+    const { data: latest, error: latestErr } = await supabase
+      .from('contabilizacao')
+      .select('id')
+      .order('id', { ascending: false })
+      .limit(1);
+    if (latestErr) {
+      console.error('Erro ao buscar ultima contabilizacao:', latestErr);
+      return res.status(500).json({ error: latestErr });
+    }
+    const contabilizacao_id = (latest && latest[0] && latest[0].id) || null;
+
+    // insert each change
+    const rows = changes.map(c => ({
+      contabilizacao_id,
+      field: c.field,
+      old_value: c.old_value == null ? null : String(c.old_value),
+      new_value: c.new_value == null ? null : String(c.new_value),
+      changed_by: c.changed_by || null
+    }));
+
+    const { data, error } = await supabase.from('contabilizacao_changes').insert(rows);
+    if (error) {
+      console.error('Erro ao inserir contabilizacao_changes:', error);
+      return res.status(500).json({ error });
+    }
+    return res.json({ inserted: data.length || data });
+  } catch (e) {
+    console.error('Erro inesperado em /api/changes', e);
+    return res.status(500).json({ error: e.message });
+  }
+});
+
 httpServer.listen(process.env.PORT || 3001, () => {
   console.log(`Servidor realtime (socket + DB) rodando na porta ${process.env.PORT || 3001}`);
 });
