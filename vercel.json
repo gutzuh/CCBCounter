@@ -1,13 +1,7 @@
 {
   "version": 2,
-  "functions": {
-    "server/index.js": {
-      "runtime": "nodejs18.x"
-    }
-  },
   "routes": [
-    { "src": "/api/(.*)", "methods": ["POST"], "dest": "server/index.js" },
     { "handle": "filesystem" },
-    { "src": "(.*)", "dest": "/index.html" }
+    { "src": "/(.*)", "dest": "/index.html" }
   ]
 }
